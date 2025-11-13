@@ -21,20 +21,25 @@ L’objectif est de recréer un gameplay similaire — une carte stratégique o�
 ## 🚀 Lancer le projet localement
 
 ### 🧠 Backend
+
 ```bash
 cd server
 npm install
 npm run start:dev
 ```
-# Serveur NestJS disponible sur http://localhost:3000
+
+Serveur NestJS disponible sur http://localhost:3000
 
 ### 🎮 Frontend
+
+```bash
 cd client
 npm install
 npm run dev
-# Front Vue disponible sur http://localhost:5173
+```
+Front Vue disponible sur http://localhost:5173
 
-##🧩 Fonctionnalités (en cours)
+## 🧩 Fonctionnalités (en cours)
 
  Backend NestJS connecté à PostgreSQL via Prisma
 
@@ -49,6 +54,6 @@ npm run dev
  Système de héros et de conquête
 
 
-###💡 Projet éducatif et passionné :
+### 💡 Projet éducatif et passionné :
 Ce projet n’a aucune visée commerciale.
 Il s’agit d’une réinterprétation personnelle du concept du jeu Dawn of Kings pour apprendre et expérimenter avec les technologies web modernes.
