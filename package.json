@@ -1,0 +1,17 @@
+{
+  "name": "dawn-of-you",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "install:all": "npm install --workspace client && npm install --workspace server",
+    "dev:server": "npm --workspace server run start:dev",
+    "dev:client": "npm --workspace client run dev",
+    "dev:all": "concurrently \"npm run dev:server\" \"npm run dev:client\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}

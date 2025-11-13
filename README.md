@@ -39,6 +39,17 @@ npm run dev
 ```
 Front Vue disponible sur http://localhost:5173
 
+### ⚡ Lancer front et back en même temps
+
+Si tu utilises le workspace global à la racine (DOY/package.json) :
+
+```bash
+npm install:all
+npm run dev:all
+```
+
+Cette commande lancera simultanément le backend et le frontend dans le même terminal (ou dans deux processus) grâce à concurrently.
+
 ## 🧩 Fonctionnalités (en cours)
 
  Backend NestJS connecté à PostgreSQL via Prisma
