@@ -1,0 +1,68 @@
+# =====================================================
+# 🌍 GLOBAL IGNORE (Client + Server)
+# =====================================================
+
+# OS / IDE / Tools
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*.swo
+*.swn
+.idea/
+.vscode/
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.local
+.env.*.local
+
+# =====================================================
+# 🖥️ CLIENT (Vue 3 + PixiJS)
+# =====================================================
+client/node_modules/
+client/dist/
+client/.vite/
+client/.nuxt/
+client/.output/
+client/.cache/
+client/.temp/
+client/.eslintcache
+client/coverage/
+client/.DS_Store
+client/npm-debug.log*
+client/yarn-error.log*
+
+# =====================================================
+# ⚙️ SERVER (NestJS + Prisma)
+# =====================================================
+server/node_modules/
+server/dist/
+server/prisma/dev.db
+server/prisma/dev.db-journal
+server/.env
+server/.DS_Store
+server/coverage/
+server/logs/
+server/npm-debug.log*
+server/yarn-error.log*
+server/.eslintcache
+
+# =====================================================
+# 🔧 Dependency & Package Managers
+# =====================================================
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# =====================================================
+# 🧪 Misc
+# =====================================================
+*.bak
+*.old
+*.orig
+*.rej
+*.seed
