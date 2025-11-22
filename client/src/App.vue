@@ -1,22 +1,24 @@
-<template>
-  <div class="app">
-    <h1>Dawn Of You</h1>
-    <GameCanvas />
-  </div>
-</template>
-
 <script setup>
-import GameCanvas from "./components/GameCanvas.vue";
+import { ref } from 'vue'
+import LoginPage from './components/LoginPage.vue'
+import GamePage from './components/GamePage.vue'
+
+const currentUser = ref(null)
+
+const onLoginSuccess = (username) => {
+  currentUser.value = username
+}
 </script>
 
-<style>
-body {
-  margin: 0;
-  background: #1a1a1a;
-  font-family: Arial,serif;
-  color: white;
-}
-.app {
-  text-align: center;
-}
-</style>
+<template>
+  <!-- Si on a un user, on affiche le jeu, sinon le login -->
+  <GamePage 
+    v-if="currentUser" 
+    :username="currentUser" 
+  />
+  
+  <LoginPage 
+    v-else 
+    @login-success="onLoginSuccess" 
+  />
+</template>

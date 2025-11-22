@@ -1,0 +1,54 @@
+/* Reset de base */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  line-height: 1.6;
+  overflow: hidden; /* Pour un jeu plein écran */
+}
+
+/* Variables CSS (Theming) */
+:root {
+  --primary-color: #4caf50;
+  --primary-hover: #45a049;
+  --bg-color: #111;
+  --card-bg: #222;
+  --input-bg: #333;
+  --border-color: #444;
+  --text-color: #fff;
+  --error-color: #ff5252;
+  
+  --radius: 8px;
+  --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Classes utilitaires globales */
+.btn {
+  padding: 10px 20px;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.2s;
+}
+
+.btn:hover {
+  background-color: var(--primary-hover);
+}
+
+.input-field {
+  padding: 10px;
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  border-radius: var(--radius);
+  width: 100%;
+}

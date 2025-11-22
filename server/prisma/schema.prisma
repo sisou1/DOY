@@ -10,11 +10,45 @@ datasource db {
 model User {
   id        Int      @id @default(autoincrement())
   username  String   @unique
-  password  String?  // peut être null pour l'instant
+  password  String?
   createdAt DateTime @default(now())
+
+  profile   PlayerProfile?
 }
 
-model City {
-  id   Int    @id @default(autoincrement())
-  name String
+model PlayerProfile {
+  id     Int  @id @default(autoincrement())
+
+  userId Int  @unique
+  user   User @relation(fields: [userId], references: [id])
+
+  food    Float @default(0)
+  wood    Float @default(0)
+  iron    Float @default(0)
+  gold    Float @default(0)
+
+  foodPerHour  Int @default(0)
+  woodPerHour  Int @default(0)
+  ironPerHour  Int @default(0)
+  
+  lastUpdate DateTime @default(now())
+
+  buildings Building[]
+}
+
+model Building {
+  id        Int      @id @default(autoincrement())
+
+  profileId Int
+  profile   PlayerProfile @relation(fields: [profileId], references: [id])
+
+  type      String
+
+  level     Int @default(1)
+
+  // Statut (ex: "ACTIVE", "UPGRADING", "CONSTRUCTING")
+  status    String @default("ACTIVE")
+
+  // Si en construction/upgrade
+  constructionEndsAt DateTime?
 }
