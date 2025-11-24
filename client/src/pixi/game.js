@@ -9,13 +9,13 @@ export function initPixi(canvas) {
 
     app = new Application({
         view: canvas,
-        background: "#000000",
+        backgroundColor: "#000000",
         resizeTo: window
     });
 
     // Exemple : un carré rouge (à remplacer plus tard)
     const box = new Graphics();
-    box.beginFill("red");
+    box.beginFill(0xFF0000);
     box.drawRect(0, 0, 100, 100);
     box.endFill();
     box.x = 100;
