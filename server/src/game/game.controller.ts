@@ -1,4 +1,4 @@
-import { Controller, Get, Req, UnauthorizedException } from '@nestjs/common';
+import {Controller, Get, Req, UnauthorizedException, Body, Post} from '@nestjs/common';
 import { GameService } from './game.service';
 import type { Request } from 'express';
 import { AuthService } from '../auth/auth.service'; // Pour retrouver l'ID via session
@@ -32,4 +32,19 @@ export class GameController {
 
         return { success: true, profile };
     }
+
+  @Post('build')
+  async build(
+    @Req() req: Request, 
+    @Body('type') type: string
+  ) {
+    const sessionId = req.cookies?.sessionId;
+    if (!sessionId) throw new UnauthorizedException('No session');
+    const userId = this.authService.getUserIdFromSession(sessionId);
+    if (!userId) throw new UnauthorizedException('Invalid session');
+
+    const updatedProfile = await this.gameService.constructBuilding(userId, type);
+    
+    return { success: true, profile: updatedProfile };
+  }
 }
