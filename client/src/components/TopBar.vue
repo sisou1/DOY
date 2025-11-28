@@ -1,16 +1,21 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 
-// On accepte la prop username
-defineProps({
+// On garde les props pour l'initialisation, mais on va utiliser une variable locale
+const props = defineProps({
   username: {
     type: String,
     default: 'Joueur'
   }
 })
 
+// On utilise une ref locale qui pourra être mise à jour par le fetch
+const currentUsername = ref(props.username)
+
 const playerLevel = ref(1)
 const playerXp = ref(0)
+const isDev = ref(false)
+
 const resources = ref({
   food: 0,
   wood: 0,
@@ -51,6 +56,13 @@ const fetchResources = async () => {
         playerLevel.value = data.profile.level
         playerXp.value = data.profile.experience || 0
       }
+
+      // Mise à jour des infos User (Pseudo + Dev)
+      if (data.profile.user) {
+        isDev.value = data.profile.user.isDev
+        // ICI : On récupère le vrai pseudo depuis la BDD
+        currentUsername.value = data.profile.user.username
+      }
     }
   } catch (e) {
     console.error("Erreur fetch resources", e)
@@ -69,7 +81,6 @@ const simulateProduction = () => {
 
 onMounted(() => {
   fetchResources()
-
   intervalId = setInterval(simulateProduction, REFRESH_RATE)
 })
 
@@ -77,17 +88,14 @@ onUnmounted(() => {
   if (intervalId) clearInterval(intervalId)
 })
 
-// Petit helper pour formater les nombres (ex: 1234 -> 1,234)
 const formatNumber = (num) => {
   return Math.floor(num).toLocaleString()
 }
 
-// Calcul du seuil pour l'affichage (copie de la formule backend)
 const getXpThreshold = (level) => {
   return 100 * Math.pow(level, 2);
 }
 
-// Fonction de cheat
 const addCheatXp = async () => {
   try {
     const response = await fetch('http://localhost:3000/game/cheat-xp', {
@@ -117,11 +125,12 @@ defineExpose({
   <div class="top-bar">
     <div class="player-section">
       <span class="username">
-        {{ username }} 
+        <!-- On affiche currentUsername au lieu de la prop username -->
+        {{ currentUsername }}
         <span class="level-badge">
             Lvl {{ playerLevel }} : {{ formatNumber(playerXp) }} / {{ formatNumber(getXpThreshold(playerLevel)) }} XP
         </span>
-        <button @click="addCheatXp" class="cheat-btn" title="Ajouter 1000 XP">+XP</button>
+        <button v-if="isDev" @click="addCheatXp" class="cheat-btn" title="DEV ONLY : +1000 XP">+XP</button>
       </span>
     </div>
 
@@ -157,7 +166,6 @@ defineExpose({
       </div>
     </div>
 
-    <!-- Partie Droite (Vide pour l'instant, peut-être un bouton logout ?) -->
     <div class="actions-section"></div>
   </div>
 </template>
@@ -171,7 +179,7 @@ defineExpose({
   height: 60px;
   background: rgba(20, 20, 20, 0.95);
   display: flex;
-  justify-content: space-between; /* Ecarte gauche/centre/droite */
+  justify-content: space-between;
   align-items: center;
   padding: 0 20px;
   border-bottom: 1px solid var(--border-color);
@@ -267,6 +275,6 @@ defineExpose({
 }
 
 .actions-section {
-  min-width: 150px; /* Pour équilibrer visuellement avec la gauche */
+  min-width: 150px;
 }
 </style>

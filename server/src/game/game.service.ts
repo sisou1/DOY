@@ -76,7 +76,12 @@ export class GameService {
     async getProfile(userId: number) {
         const profile = await this.prisma.playerProfile.findUnique({
             where: { userId },
-            include: { buildings: true }, // On récupère les bâtiments pour avoir leur ID
+            include: {
+                buildings: true,
+                user: {
+                    select: { username: true, isDev: true } // On ne prend que ce qui nous intéresse (pas le mot de passe !)
+                }
+            }
         });
 
         if (!profile) return null;
@@ -109,7 +114,12 @@ export class GameService {
                 iron: newIron,
                 lastUpdate: now,
             },
-            include: { buildings: true },
+            include: {
+                buildings: true,
+                user: {
+                    select: { username: true, isDev: true }
+                }
+            },
         });
 
         return updatedProfile;
