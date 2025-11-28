@@ -44,3 +44,14 @@ export const getBuildingStats = (type: string, level: number) => {
     time: level * 60 
   };
 };
+
+/**
+ * Calcule l'XP nécessaire pour passer du niveau actuel au niveau suivant.
+ * Formule basique : 100 * (niveau actuel)^2
+ * Niv 1 -> 2 : 100 XP
+ * Niv 2 -> 3 : 400 XP
+ * Niv 3 -> 4 : 900 XP
+ */
+export const getXpForNextLevel = (currentLevel: number) => {
+  return 100 * Math.pow(currentLevel, 2);
+};

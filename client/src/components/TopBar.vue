@@ -9,6 +9,7 @@ defineProps({
   }
 })
 
+const playerLevel = ref(1)
 const resources = ref({
   food: 0,
   wood: 0,
@@ -29,18 +30,24 @@ const fetchResources = async () => {
       credentials: 'include' // Important pour le cookie de session !
     })
     const data = await response.json()
-    
+
     if (data.success && data.profile) {
+      // Mise à jour des ressources
       resources.value = {
         food: data.profile.food,
         wood: data.profile.wood,
         iron: data.profile.iron,
         gold: data.profile.gold
       }
+      // Mise à jour de la prod
       production.value = {
         food: data.profile.foodPerHour,
         wood: data.profile.woodPerHour,
         iron: data.profile.ironPerHour
+      }
+      // Mise à jour du niveau
+      if (data.profile.level) {
+        playerLevel.value = data.profile.level
       }
     }
   } catch (e) {
@@ -62,7 +69,6 @@ onMounted(() => {
   fetchResources()
 
   intervalId = setInterval(simulateProduction, REFRESH_RATE)
-
 })
 
 onUnmounted(() => {
@@ -82,7 +88,9 @@ defineExpose({
 <template>
   <div class="top-bar">
     <div class="player-section">
-      <span class="username">Joueur : {{ username }}</span>
+      <span class="username">
+        {{ username }} <span class="level-badge">Lvl {{ playerLevel }}</span>
+      </span>
     </div>
 
     <div class="resources-section">
@@ -93,7 +101,7 @@ defineExpose({
           <span class="rate">+{{ production.food }}/h</span>
         </div>
       </div>
-      
+
       <!-- BOIS (Wood) -->
       <div class="resource-item">
         <span class="icon">🪵</span>
@@ -102,7 +110,7 @@ defineExpose({
           <span class="rate">+{{ production.wood }}/h</span>
         </div>
       </div>
-      
+
       <div class="resource-item">
         <span class="icon">⛓️</span>
         <div class="res-details">
@@ -110,7 +118,7 @@ defineExpose({
           <span class="rate">+{{ production.iron }}/h</span>
         </div>
       </div>
-      
+
       <div class="resource-item gold">
         <span class="icon">🪙</span>
         <span class="amount">{{ formatNumber(resources.gold) }}</span>
@@ -146,6 +154,23 @@ defineExpose({
   font-weight: bold;
   font-size: 1.1rem;
   color: var(--primary-color);
+  display: flex;
+  align-items: center;
+}
+
+.username {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.level-badge {
+  background-color: #2c3e50;
+  color: #3498db;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  border: 1px solid #3498db;
 }
 
 .resources-section {

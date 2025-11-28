@@ -28,6 +28,14 @@ npm install
 npm run start:dev
 ```
 
+### 🧠 mettre a jour prisma
+```bash
+cd server
+npx prisma generate
+npx prisma db push --accept-data-loss
+```
+
+
 Serveur NestJS disponible sur http://localhost:3000
 
 ### 🎮 Frontend
