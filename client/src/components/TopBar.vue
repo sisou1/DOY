@@ -11,14 +11,14 @@ defineProps({
 
 const resources = ref({
   food: 0,
-  wood: 0, // <--- Updated
+  wood: 0,
   iron: 0,
   gold: 0
 })
 
 const production = ref({
   food: 0,
-  wood: 0, // <--- Updated
+  wood: 0,
   iron: 0
 })
 
@@ -33,13 +33,13 @@ const fetchResources = async () => {
     if (data.success && data.profile) {
       resources.value = {
         food: data.profile.food,
-        wood: data.profile.wood, // <--- Updated
+        wood: data.profile.wood,
         iron: data.profile.iron,
         gold: data.profile.gold
       }
       production.value = {
         food: data.profile.foodPerHour,
-        wood: data.profile.woodPerHour, // <--- Updated
+        wood: data.profile.woodPerHour,
         iron: data.profile.ironPerHour
       }
     }
@@ -54,18 +54,15 @@ const REFRESH_RATE = 1000 // 1 seconde
 
 const simulateProduction = () => {
   resources.value.food += production.value.food / 3600
-  resources.value.wood += production.value.wood / 3600 // <--- Updated
+  resources.value.wood += production.value.wood / 3600
   resources.value.iron += production.value.iron / 3600
 }
 
 onMounted(() => {
   fetchResources()
-  
-  // On simule la prod chaque seconde
+
   intervalId = setInterval(simulateProduction, REFRESH_RATE)
-  
-  // Optionnel : On peut refaire un vrai fetch toutes les minutes pour se recaler
-  // setInterval(fetchResources, 60000) 
+
 })
 
 onUnmounted(() => {
@@ -76,6 +73,10 @@ onUnmounted(() => {
 const formatNumber = (num) => {
   return Math.floor(num).toLocaleString()
 }
+
+defineExpose({
+  fetchResources
+})
 </script>
 
 <template>

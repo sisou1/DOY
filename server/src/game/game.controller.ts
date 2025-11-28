@@ -1,40 +1,32 @@
-import {Controller, Get, Req, UnauthorizedException, Body, Post} from '@nestjs/common';
+import { Controller, Get, Post, Body, Req, UnauthorizedException, Query } from '@nestjs/common';
 import { GameService } from './game.service';
 import type { Request } from 'express';
-import { AuthService } from '../auth/auth.service'; // Pour retrouver l'ID via session
+import { AuthService } from '../auth/auth.service';
 
 @Controller('game')
 export class GameController {
-    constructor(
-        private gameService: GameService,
-        private authService: AuthService
-    ) {}
+  constructor(
+    private gameService: GameService,
+    private authService: AuthService
+  ) {}
 
-    // Route principale pour récupérer son état de jeu (Ressources + Bâtiments)
-    // GET /game/my-profile
-    @Get('my-profile')
-    async getMyProfile(@Req() req: Request) {
-        // Récupération de l'utilisateur via le cookie de session
-        const sessionId = req.cookies?.sessionId;
-        if (!sessionId) throw new UnauthorizedException('No session');
+  @Get('my-profile')
+  async getMyProfile(@Req() req: Request) {
+    const sessionId = req.cookies?.sessionId;
+    if (!sessionId) throw new UnauthorizedException('No session');
+    const userId = this.authService.getUserIdFromSession(sessionId);
+    if (!userId) throw new UnauthorizedException('Invalid session');
 
-        const userId = this.authService.getUserIdFromSession(sessionId);
-        if (!userId) throw new UnauthorizedException('Invalid session');
-
-        // Récupération du profil avec calcul des ressources à jour
-        let profile = await this.gameService.getProfile(userId);
-
-        // Si le profil n'existe pas (vieux user sans profil), on le crée à la volée
-        // (C'est une sécurité pour le dev, en prod on le ferait à l'inscription)
+    let profile = await this.gameService.getProfile(userId);
     if (!profile) {
-        profile = await this.gameService.createProfile(userId);
+      profile = await this.gameService.createProfile(userId);
     }
+    return { success: true, profile };
+  }
 
-        return { success: true, profile };
-    }
-
-  @Post('build')
-  async build(
+  // ROUTE RENOMMÉE : /upgrade
+  @Post('upgrade')
+  async upgrade(
     @Req() req: Request, 
     @Body('type') type: string
   ) {
@@ -43,8 +35,31 @@ export class GameController {
     const userId = this.authService.getUserIdFromSession(sessionId);
     if (!userId) throw new UnauthorizedException('Invalid session');
 
-    const updatedProfile = await this.gameService.constructBuilding(userId, type);
-    
+    const updatedProfile = await this.gameService.upgradeBuilding(userId, type);
     return { success: true, profile: updatedProfile };
+  }
+
+  @Post('reset')
+  async reset(@Req() req: Request) {
+    const sessionId = req.cookies?.sessionId;
+    if (!sessionId) throw new UnauthorizedException('No session');
+    const userId = this.authService.getUserIdFromSession(sessionId);
+    if (!userId) throw new UnauthorizedException('Invalid session');
+
+    const newProfile = await this.gameService.resetProfile(userId);
+    return { success: true, profile: newProfile };
+  }
+
+  @Get('building-stats')
+  getStats(
+    @Query('type') type: string,
+    @Query('level') level: string
+  ) {
+    
+    const lvl = parseInt(level, 10);
+    if (isNaN(lvl) || !type) return { success: false };
+
+    const stats = this.gameService.getNextLevelStats(type, lvl);
+    return { success: true, stats };
   }
 }
