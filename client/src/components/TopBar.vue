@@ -10,6 +10,7 @@ defineProps({
 })
 
 const playerLevel = ref(1)
+const playerXp = ref(0)
 const resources = ref({
   food: 0,
   wood: 0,
@@ -48,6 +49,7 @@ const fetchResources = async () => {
       // Mise à jour du niveau
       if (data.profile.level) {
         playerLevel.value = data.profile.level
+        playerXp.value = data.profile.experience || 0
       }
     }
   } catch (e) {
@@ -80,6 +82,32 @@ const formatNumber = (num) => {
   return Math.floor(num).toLocaleString()
 }
 
+// Calcul du seuil pour l'affichage (copie de la formule backend)
+const getXpThreshold = (level) => {
+  return 100 * Math.pow(level, 2);
+}
+
+// Fonction de cheat
+const addCheatXp = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/game/cheat-xp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ amount: 1000 }),
+      credentials: 'include'
+    })
+    const data = await response.json()
+    if (data.success && data.profile) {
+      playerLevel.value = data.profile.level
+      playerXp.value = data.profile.experience
+    }
+  } catch (e) {
+    console.error("Erreur cheat XP", e)
+  }
+}
+
 defineExpose({
   fetchResources
 })
@@ -89,7 +117,11 @@ defineExpose({
   <div class="top-bar">
     <div class="player-section">
       <span class="username">
-        {{ username }} <span class="level-badge">Lvl {{ playerLevel }}</span>
+        {{ username }} 
+        <span class="level-badge">
+            Lvl {{ playerLevel }} : {{ formatNumber(playerXp) }} / {{ formatNumber(getXpThreshold(playerLevel)) }} XP
+        </span>
+        <button @click="addCheatXp" class="cheat-btn" title="Ajouter 1000 XP">+XP</button>
       </span>
     </div>
 
@@ -171,6 +203,24 @@ defineExpose({
   border-radius: 12px;
   font-size: 0.8em;
   border: 1px solid #3498db;
+  margin-left: 10px;
+  white-space: nowrap;
+}
+
+.cheat-btn {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.7em;
+  margin-left: 10px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.cheat-btn:hover {
+  background-color: #c0392b;
 }
 
 .resources-section {

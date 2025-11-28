@@ -62,4 +62,24 @@ export class GameController {
     const stats = this.gameService.getNextLevelStats(type, lvl);
     return { success: true, stats };
   }
+
+  // ROUTE DE TEST : Ajouter de l'XP avec un montant variable
+  @Post('cheat-xp')
+  async cheatXp(
+    @Req() req: Request,
+    @Body('amount') amount: number // On récupère le champ "amount" du JSON envoyé
+  ) {
+    const sessionId = req.cookies?.sessionId;
+    if (!sessionId) throw new UnauthorizedException('No session');
+    const userId = this.authService.getUserIdFromSession(sessionId);
+    if (!userId) throw new UnauthorizedException('Invalid session');
+
+    // Par défaut 1000 si rien n'est envoyé, sinon la valeur demandée
+    const xpToAdd = amount ? parseInt(amount.toString()) : 1000;
+
+    await this.gameService.addExperience(userId, xpToAdd);
+    
+    const profile = await this.gameService.getProfile(userId);
+    return { success: true, profile };
+  }
 }
