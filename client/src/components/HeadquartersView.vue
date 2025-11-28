@@ -7,8 +7,21 @@ const props = defineProps({
 
 const emit = defineEmits(['upgrade-action'])
 
-// Plus de config dupliquée ici ! C'est clean.
+// --- CONFIGURATION DES ZONES ---
+// On définit la position du coin haut-gauche de chaque zone de 4 bâtiments (2x2)
+const zoneConfig = {
+  FARM: { 
+    style: { top: '30%', left: '77%' } // Zone Ferme (Haut Droite)
+  },
+  SAWMILL: { 
+    style: { top: '40%', left: '15%' } // Zone Scierie (Milieu Gauche)
+  },
+  IRON_MINE: { 
+    style: { top: '60%', left: '45%' } // Zone Mine (Bas Milieu)
+  }
+}
 
+// --- HELPERS POUR L'AFFICHAGE ---
 const buildingImages = {
   SAWMILL: '/HeadQuartersBuildings/Sawmill.png',
   FARM: '/HeadQuartersBuildings/Farm.png',
@@ -21,16 +34,39 @@ const buildingNames = {
   IRON_MINE: 'Mine de Fer'
 }
 
-const ORDER = ['FARM', 'SAWMILL', 'IRON_MINE']
-
-const sortedBuildings = computed(() => {
-  // On crée une copie pour ne pas muter la prop (bonnes pratiques Vue)
-  return [...props.buildings].sort((a, b) => {
-    const indexA = ORDER.indexOf(a.type)
-    const indexB = ORDER.indexOf(b.type)
-    return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB)
+// On groupe les bâtiments par type pour les injecter dans les zones
+const groupedBuildings = computed(() => {
+  const groups = {
+    FARM: [],
+    SAWMILL: [],
+    IRON_MINE: []
+  }
+  
+  // On place les vrais bâtiments
+  props.buildings.forEach(b => {
+    if (groups[b.type]) {
+      groups[b.type].push(b)
+    }
   })
+
+  return groups
 })
+
+// --- ELEMENTS DECORATIFS ---
+const decorBuildings = [
+  {
+    name: 'QG',
+    img: '/HeadQuartersBuildings/Batiment principal.png',
+    style: { top: '15%', left: '40%'},
+    width: '280px' //
+  },
+  {
+    name: 'Moulin',
+    img: '/HeadQuartersBuildings/Moulin.png',
+    style: { top: '10%', left: '80%' },
+    width: '140px' //
+  }
+]
 
 const selectedBuilding = ref(null)
 const nextLevelStats = ref(null)
@@ -54,8 +90,6 @@ const openUpgradeModal = async (building) => {
   nextLevelStats.value = null
   currentLevelStats.value = null
 
-  // On demande au serveur les stats actuelles et futures
-  // Promise.all permet de lancer les 2 requêtes en parallèle
   const [current, next] = await Promise.all([
     fetchStats(building.type, building.level),
     fetchStats(building.type, building.level + 1)
@@ -81,32 +115,56 @@ const confirmUpgrade = () => {
 </script>
 
 <template>
-  <div class="hq-container">
-    <h2>🛡️ Quartier Général</h2>
+  <div class="scene-container">
+    
+    <!-- 1. Éléments Décoratifs (Arrière-plan) -->
+    <div 
+      v-for="(decor, index) in decorBuildings" 
+      :key="'decor-'+index"
+      class="decor-sprite"
+      :style="{ ...decor.style, width: decor.width }"
+    >
+      <img :src="decor.img" :alt="decor.name" />
+    </div>
 
-    <div class="buildings-grid">
-      <div
-        v-for="building in sortedBuildings"
-        :key="building.id"
-        class="building-card"
-        @click="openUpgradeModal(building)"
+    <!-- 2. Zones de Bâtiments (Grilles 2x2) -->
+    <div 
+      v-for="(config, type) in zoneConfig" 
+      :key="type"
+      class="building-zone"
+      :style="config.style"
+    >
+      <!-- Slot 1 : Le vrai bâtiment (s'il existe) -->
+      <div 
+        v-if="groupedBuildings[type][0]" 
+        class="building-slot interactive"
+        @click="openUpgradeModal(groupedBuildings[type][0])"
       >
-        <div class="level-badge">Niv. {{ building.level }}</div>
-        <img :src="buildingImages[building.type]" :alt="building.type" class="building-img" />
-        <h3>{{ buildingNames[building.type] }}</h3>
+        <div class="level-badge">{{ groupedBuildings[type][0].level }}</div>
+        <img :src="buildingImages[type]" :alt="type" />
+        <div class="building-label">{{ buildingNames[type] }}</div>
       </div>
+      <!-- Sinon slot vide (cas rare) -->
+      <div v-else class="building-slot empty">
+        <img src="/HeadQuartersBuildings/Emplacement vide.png" />
+      </div>
+
+      <!-- Slots 2, 3, 4 : Toujours vides pour l'instant -->
+      <div class="building-slot empty"><img src="/HeadQuartersBuildings/Emplacement vide.png" /></div>
+      <div class="building-slot empty"><img src="/HeadQuartersBuildings/Emplacement vide.png" /></div>
+      <div class="building-slot empty"><img src="/HeadQuartersBuildings/Emplacement vide.png" /></div>
     </div>
 
     <!-- MODALE UPGRADE -->
     <div v-if="selectedBuilding" class="modal-overlay" @click.self="closeModal">
       <div class="modal-content">
         <h3>Améliorer {{ buildingNames[selectedBuilding.type] }}</h3>
-
-        <div v-if="isLoadingStats" class="loading">Chargement des données...</div>
-
+        
+        <div v-if="isLoadingStats" class="loading">Chargement...</div>
+        
         <div v-else-if="nextLevelStats && currentLevelStats">
           <p class="level-transition">Niveau {{ selectedBuilding.level }} ➝ <span class="highlight-green">Niveau {{ selectedBuilding.level + 1 }}</span></p>
-
+          
           <div class="stats-comparison">
             <div class="stat-row">
               <span>Production :</span>
@@ -122,55 +180,77 @@ const confirmUpgrade = () => {
           </div>
 
           <div class="modal-actions">
-            <button class="btn-cancel" @click="closeModal">Annuler</button>
+            <button class="btn-cancel" @click="closeModal">Fermer</button>
             <button class="btn-confirm" @click="confirmUpgrade">Améliorer</button>
           </div>
         </div>
         
-        <div v-else class="error-msg">Impossible de charger les statistiques.</div>
+        <div v-else class="error-msg">Erreur données.</div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Styles précédents identiques + loading */
-.loading { color: #aaa; margin: 2rem 0; font-style: italic; }
-/* ... (Reste du CSS comme avant) ... */
-/* Styles précédents inchangés */
-.hq-container {
-  background: rgba(20, 25, 30, 0.95);
-  border: 1px solid #3a4a5a;
-  border-radius: 4px;
-  padding: 2rem;
-  width: 800px;
+.scene-container {
   position: absolute;
-  top: 50%; left: 50%; transform: translate(-50%, -50%);
-  z-index: 50;
-  color: white;
+  top: 60px; left: 0; width: 100vw; height: calc(100vh - 60px);
+  background-image: url('/HeadQuartersBuildings/Fond.png');
+  background-size: cover; background-position: center;
+  z-index: 10; overflow: hidden;
 }
-.buildings-grid {
-  display: flex; justify-content: center; gap: 2rem; margin-top: 2rem;
+
+/* --- STYLES DES ZONES --- */
+.building-zone {
+  position: absolute;
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* Grille 2 colonnes */
+  grid-template-rows: 1fr 1fr;    /* Grille 2 lignes */
+  gap: 10px; /* Espacement entre les bâtiments de la zone */
+  width: 260px; /* Largeur totale de la zone (2 * 120px + gap) */
 }
-.building-card {
-  position: relative; background: rgba(0,0,0,0.3); border: 1px solid #444;
-  border-radius: 8px; padding: 1rem; cursor: pointer; transition: all 0.2s;
-  width: 180px; text-align: center;
+
+.building-slot {
+  width: 120px;
+  height: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
 }
-.building-card:hover { border-color: #64b5f6; transform: scale(1.05); background: rgba(255,255,255,0.05); }
-.building-img { width: 100px; height: 100px; object-fit: contain; margin-bottom: 10px; }
-.level-badge {
-  position: absolute; top: 5px; right: 5px; background: #e6c200;
-  color: black; font-weight: bold; font-size: 0.8rem; padding: 2px 6px; border-radius: 4px;
+
+.building-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transition: filter 0.2s, transform 0.2s;
 }
-.modal-overlay {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7);
-  z-index: 100; display: flex; justify-content: center; align-items: center;
+
+/* Slot vide : Image brute, pas de grisaille, pas de clic */
+.empty img {
+  /* Aucune modification, on affiche l'image telle quelle */
+  filter: none;
+  opacity: 1;
 }
-.modal-content {
-  background: #222; padding: 2rem; border-radius: 8px; border: 1px solid #555;
-  text-align: center; min-width: 350px;
-}
+
+/* Slot interactif (Vrai bâtiment) */
+.interactive { cursor: pointer; }
+.interactive img { filter: drop-shadow(0 5px 10px rgba(0,0,0,0.7)); }
+.interactive:hover img { filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.6)); transform: scale(1.05); }
+
+/* Décor (QG, Moulin) */
+.decor-sprite { position: absolute; display: flex; flex-direction: column; align-items: center; }
+.decor-sprite img { width: 100%; height: auto; filter: drop-shadow(0 5px 10px rgba(0,0,0,0.5)); }
+
+/* --- UI ELEMENTS --- */
+.level-badge { position: absolute; top: 0; right: 0; background: #e6c200; color: black; font-weight: bold; border-radius: 50%; width: 25px; height: 25px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.5); z-index: 2; }
+.building-label { background: rgba(0,0,0,0.6); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; position: absolute; bottom: -10px; opacity: 0; transition: opacity 0.2s; pointer-events: none; white-space: nowrap; z-index: 5; }
+.interactive:hover .building-label { opacity: 1; }
+
+/* --- MODALE (Inchangé) --- */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: flex; justify-content: center; align-items: center; }
+.modal-content { background: #222; padding: 2rem; border-radius: 8px; border: 1px solid #555; text-align: center; min-width: 350px; color: white; }
 .modal-actions { display: flex; justify-content: space-around; margin-top: 1.5rem; }
 .btn-confirm { background: #2e7d32; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 4px; }
 .btn-cancel { background: #c62828; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 4px; }
@@ -184,4 +264,6 @@ const confirmUpgrade = () => {
 .diff { font-size: 0.8rem; color: #888; margin-left: 5px; }
 .wood-cost { color: #e6c200; font-weight: bold; font-size: 1.1rem; }
 .cost-preview { margin-bottom: 1rem; font-size: 1.1rem; }
+.loading { color: #aaa; margin: 2rem 0; font-style: italic; }
+.error-msg { color: #ff5252; }
 </style>
