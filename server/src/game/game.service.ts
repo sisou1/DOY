@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { BUILDING_TYPES, getBuildingStats, getXpForNextLevel } from './game.config';
+import { BUILDING_TYPES, getBuildingStats, getXpForNextLevel, LEVEL_REWARDS } from './game.config';
 
 @Injectable()
 export class GameService {
@@ -39,27 +39,70 @@ export class GameService {
         return this.getProfile(userId);
     }
 
+    /**
+     * Cette méthode est le coeur du système de temps.
+     * Elle vérifie si des bâtiments en construction sont terminés.
+     */
+    private async processFinishedConstructions(profileId: number) {
+        const now = new Date();
+
+        // 1. Trouver les bâtiments dont la construction est finie (date passée)
+        const finishedBuildings = await this.prisma.building.findMany({
+            where: {
+                profileId,
+                status: 'UPGRADING',
+                constructionEndsAt: { lte: now } // "Less Than or Equal to" now
+            }
+        });
+
+        if (finishedBuildings.length === 0) return;
+
+        // 2. Pour chaque bâtiment fini, on applique le niveau
+        for (const building of finishedBuildings) {
+            await this.prisma.building.update({
+                where: { id: building.id },
+                data: {
+                    level: { increment: 1 }, // On monte le niveau
+                    status: 'ACTIVE',        // On repasse en actif
+                    constructionEndsAt: null // On vide le timer
+                }
+            });
+        }
+
+        // 3. On recalcul la production car les niveaux ont changé
+        await this.recalculateProduction(profileId);
+    }
+
     async getProfile(userId: number) {
         const profile = await this.prisma.playerProfile.findUnique({
             where: { userId },
-            include: { buildings: true },
+            include: { buildings: true }, // On récupère les bâtiments pour avoir leur ID
         });
 
         if (!profile) return null;
 
+        await this.processFinishedConstructions(profile.id);
+
+        const refreshedProfile = await this.prisma.playerProfile.findUnique({
+            where: { id: profile.id },
+            include: { buildings: true },
+        });
+
+        if (!refreshedProfile) return null;
+
         const now = new Date();
-        const lastUpdate = new Date(profile.lastUpdate);
+        const lastUpdate = new Date(refreshedProfile.lastUpdate);
         const diffInMs = now.getTime() - lastUpdate.getTime();
         const diffInHours = diffInMs / (1000 * 60 * 60);
 
-        if (diffInHours <= 0) return profile;
+        if (diffInHours <= 0) return refreshedProfile;
 
-        const newFood = profile.food + (profile.foodPerHour * diffInHours);
-        const newWood = profile.wood + (profile.woodPerHour * diffInHours);
-        const newIron = profile.iron + (profile.ironPerHour * diffInHours);
+        const newFood = refreshedProfile.food + (refreshedProfile.foodPerHour * diffInHours);
+        const newWood = refreshedProfile.wood + (refreshedProfile.woodPerHour * diffInHours);
+        const newIron = refreshedProfile.iron + (refreshedProfile.ironPerHour * diffInHours);
 
         const updatedProfile = await this.prisma.playerProfile.update({
-            where: { id: profile.id },
+            where: { id: refreshedProfile.id },
             data: {
                 food: newFood,
                 wood: newWood,
@@ -74,7 +117,7 @@ export class GameService {
 
     async recalculateProduction(profileId: number) {
         const buildings = await this.prisma.building.findMany({
-            where: { profileId, status: 'ACTIVE' }
+            where: { profileId, status: 'ACTIVE' } // Seuls les bâtiments actifs produisent
         });
 
         let foodProd = 0;
@@ -101,13 +144,20 @@ export class GameService {
     }
 
     async upgradeBuilding(userId: number, type: string) {
+        // On utilise getProfile pour s'assurer que les timers précédents sont traités
         const profile = await this.getProfile(userId);
         if (!profile) throw new BadRequestException('Profile not found');
 
-        const existingBuilding = profile.buildings.find(b => b.type === type);
+        // On cherche un bâtiment de ce type qui est prêt à être amélioré
+        // On ne prend PAS ceux qui sont déjà en 'UPGRADING'
+        const existingBuilding = profile.buildings.find(b => b.type === type && b.status === 'ACTIVE');
 
         if (!existingBuilding) {
-            throw new BadRequestException('Building not available');
+            // Soit il n'existe pas, soit il est déjà en train d'être amélioré
+            const isUpgrading = profile.buildings.find(b => b.type === type && b.status === 'UPGRADING');
+            if (isUpgrading) throw new BadRequestException('Building is already upgrading');
+
+            throw new BadRequestException('Building not available or busy');
         }
 
         const levelToBuild = existingBuilding.level + 1;
@@ -121,7 +171,7 @@ export class GameService {
             throw new BadRequestException('Not enough resources');
         }
 
-        // Paiement
+        // 1. Paiement immédiat
         await this.prisma.playerProfile.update({
             where: { id: profile.id },
             data: {
@@ -131,16 +181,20 @@ export class GameService {
             }
         });
 
-        // Upgrade
+        // 2. Calcul de la date de fin
+        const constructionTimeMs = stats.time * 1000; // stats.time est en secondes
+        const constructionEndsAt = new Date(Date.now() + constructionTimeMs);
+
+        // 3. Mise à jour du statut : On ne monte PAS le niveau tout de suite
         await this.prisma.building.update({
             where: { id: existingBuilding.id },
             data: {
-                level: levelToBuild,
-                status: 'ACTIVE'
+                status: 'UPGRADING',
+                constructionEndsAt: constructionEndsAt
             }
         });
 
-        await this.recalculateProduction(profile.id);
+        // On renvoie le profil à jour (le front verra le status UPGRADING)
         return this.getProfile(userId);
     }
 
@@ -160,15 +214,29 @@ export class GameService {
         let currentXp = profile.experience + amount;
         let currentLevel = profile.level;
         let xpNeeded = getXpForNextLevel(currentLevel);
+        let hasLeveledUp = false;
 
-        // On vérifie si on level up (gère plusieurs niveaux d'un coup si nécessaire)
         while (currentXp >= xpNeeded) {
             currentXp -= xpNeeded;
             currentLevel++;
             xpNeeded = getXpForNextLevel(currentLevel);
+            hasLeveledUp = true;
+
+            const rewards = LEVEL_REWARDS[currentLevel];
+            if (rewards) {
+                for (const reward of rewards) {
+                    await this.prisma.building.create({
+                        data: {
+                            profileId: profile.id,
+                            type: reward.type,
+                            level: 1,
+                            status: 'ACTIVE'
+                        }
+                    });
+                }
+            }
         }
 
-        // Sauvegarde uniquement si changement
         if (currentXp !== profile.experience || currentLevel !== profile.level) {
             await this.prisma.playerProfile.update({
                 where: { id: profile.id },
@@ -177,6 +245,10 @@ export class GameService {
                     level: currentLevel
                 }
             });
+
+            if (hasLeveledUp) {
+                await this.recalculateProduction(profile.id);
+            }
         }
     }
 }

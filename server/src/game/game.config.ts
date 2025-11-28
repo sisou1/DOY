@@ -41,7 +41,7 @@ export const getBuildingStats = (type: string, level: number) => {
     cost: { food: 0, wood: woodCost, iron: 0 },
     production: production,
     // Temps (en secondes) : On peut aussi faire une formule (ex: 10s * niveau)
-    time: level * 60 
+    time: level * 5
   };
 };
 
@@ -52,6 +52,17 @@ export const getBuildingStats = (type: string, level: number) => {
  * Niv 2 -> 3 : 400 XP
  * Niv 3 -> 4 : 900 XP
  */
-export const getXpForNextLevel = (currentLevel: number) => {
-  return 100 * Math.pow(currentLevel, 2);
+export const getXpForNextLevel = (level: number) => {
+  return 100 * Math.pow(level, 2);
+};
+
+// Définition des bâtiments gagnés par niveau
+export const LEVEL_REWARDS: Record<number, { type: string }[]> = {
+  5:  [{ type: BUILDING_TYPES.FARM }],
+  10: [{ type: BUILDING_TYPES.SAWMILL }],
+  15: [{ type: BUILDING_TYPES.FARM }],
+  20: [{ type: BUILDING_TYPES.SAWMILL }, { type: BUILDING_TYPES.IRON_MINE }],
+  25: [{ type: BUILDING_TYPES.FARM }, { type: BUILDING_TYPES.IRON_MINE }],
+  30: [{ type: BUILDING_TYPES.SAWMILL }, { type: BUILDING_TYPES.IRON_MINE }],
+  // Tu peux continuer la liste ici...
 };
