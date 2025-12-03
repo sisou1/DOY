@@ -7,8 +7,11 @@ import {
     LEVEL_REWARDS,
     HERO_TYPES,
     getHeroBaseStats,
-    HERO_STATS // <-- Assure-toi d'importer HERO_STATS ici
+    HERO_STATS
 } from './game.config';
+
+// Constante : 1 Round = 1 Seconde (1000ms)
+const ROUND_DURATION = 1000;
 
 @Injectable()
 export class GameService {
@@ -109,6 +112,23 @@ export class GameService {
         });
 
         if (!profile) return null;
+
+        // --- NOUVEAU : MISE À JOUR DES BATAILLES EN COURS ---
+        // On vérifie si un héros est dans une bataille active
+        const activeHero = profile.heroes.find(h => h.battleId !== null);
+
+        if (activeHero && activeHero.battleId) {
+            // On force le calcul de cette bataille pour mettre à jour les PV
+            const battle = await this.prisma.battle.findUnique({
+                where: { id: activeHero.battleId },
+                include: { heroes: true }
+            });
+
+            if (battle && battle.status === 'IN_PROGRESS') {
+                await this.processBattleRounds(battle);
+            }
+        }
+        // -----------------------------------------------------
 
         await this.processFinishedConstructions(profile.id);
 
@@ -303,6 +323,176 @@ export class GameService {
             if (hasLeveledUp) {
                 await this.recalculateProduction(profile.id);
             }
+        }
+    }
+
+    // --- SYSTÈME DE BATAILLE ---
+
+    async startPvEBattle(userId: number) {
+        const profile = await this.getProfile(userId);
+        if (!profile) throw new BadRequestException('Profile not found');
+
+        // 1. Trouver un héros disponible (pas déjà en combat)
+        const myHero = profile.heroes.find(h => h.troops > 0 && !h.battleId);
+        if (!myHero) throw new BadRequestException('No available heroes (dead or busy)');
+
+        // 2. Créer le Monstre (Bot)
+        const goblinStats = getHeroBaseStats(HERO_TYPES.GOBLIN);
+        const mob = await this.prisma.hero.create({
+            data: {
+                name: 'Goblin Scout',
+                type: HERO_TYPES.GOBLIN,
+                attack: goblinStats.attack,
+                defense: goblinStats.defense,
+                troops: goblinStats.maxTroops,
+                maxTroops: goblinStats.maxTroops,
+                side: 'DEFENDER',
+                queueOrder: 0 // Premier en ligne
+            }
+        });
+
+        // 3. Mettre à jour mon héros
+        await this.prisma.hero.update({
+            where: { id: myHero.id },
+            data: {
+                side: 'ATTACKER',
+                queueOrder: 0 // Premier en ligne
+            }
+        });
+
+        // 4. Créer l'instance de Bataille
+        const battle = await this.prisma.battle.create({
+            data: {
+                status: 'IN_PROGRESS',
+                lastUpdate: new Date(), // Le chrono démarre maintenant
+                heroes: {
+                    connect: [
+                        { id: myHero.id },
+                        { id: mob.id }
+                    ]
+                }
+            },
+            include: { heroes: true }
+        });
+
+        return battle;
+    }
+
+    async getBattle(battleId: number) {
+        // 1. Récupérer l'état brut en base
+        let battle = await this.prisma.battle.findUnique({
+            where: { id: battleId },
+            include: { heroes: { orderBy: { queueOrder: 'asc' } } }
+        });
+
+        if (!battle) throw new BadRequestException('Battle not found');
+
+        // 2. SI le combat est en cours, on calcule ce qui s'est passé depuis la dernière fois
+        if (battle.status === 'IN_PROGRESS') {
+            await this.processBattleRounds(battle);
+            
+            // On recharge la version à jour
+            battle = await this.prisma.battle.findUnique({
+                where: { id: battleId },
+                include: { heroes: { orderBy: { queueOrder: 'asc' } } }
+            });
+        }
+
+        return battle;
+    }
+
+    // C'est ici que la magie opère (Simulation Lazy)
+    private async processBattleRounds(battle: any) {
+        const now = new Date().getTime();
+        const lastUpdate = new Date(battle.lastUpdate).getTime();
+        
+        // Combien de temps s'est écoulé ?
+        const timeDiff = now - lastUpdate;
+        
+        // Combien de rounds entiers on doit jouer ?
+        const roundsToPlay = Math.floor(timeDiff / ROUND_DURATION);
+
+        if (roundsToPlay <= 0) return; // Rien à faire, on est à jour
+
+        let newLogs = [...(battle.logs as any[])];
+        let isBattleFinished = false;
+        
+        // On récupère les listes vivantes
+        // Note: on travaille sur des objets JS ici, on sauvegardera à la fin
+        const attackers = battle.heroes.filter(h => h.side === 'ATTACKER' && h.troops > 0);
+        const defenders = battle.heroes.filter(h => h.side === 'DEFENDER' && h.troops > 0);
+
+        // BOUCLE DE RATTRAPAGE TEMPOREL
+        for (let i = 0; i < roundsToPlay; i++) {
+            if (attackers.length === 0 || defenders.length === 0) {
+                isBattleFinished = true;
+                break;
+            }
+
+            // Le premier de chaque file se tape dessus
+            const activeAttacker = attackers[0];
+            const activeDefender = defenders[0];
+
+            // Logique simple : Dégâts = Attaque (On pourra complexifier avec la défense plus tard)
+            // On peut dire Dégats = Max(1, Attaque - Defense/2)
+            const dmgToDefender = Math.max(1, Math.floor(activeAttacker.attack - (activeDefender.defense * 0.2)));
+            const dmgToAttacker = Math.max(1, Math.floor(activeDefender.attack - (activeAttacker.defense * 0.2)));
+
+            // Application des dégâts
+            activeDefender.troops -= dmgToDefender;
+            activeAttacker.troops -= dmgToAttacker;
+
+            // Ajout au log
+            newLogs.push({
+                round_time: lastUpdate + ((i + 1) * ROUND_DURATION), // Timestamp virtuel du coup
+                actions: [
+                    { from: activeAttacker.id, to: activeDefender.id, dmg: dmgToDefender },
+                    { from: activeDefender.id, to: activeAttacker.id, dmg: dmgToAttacker }
+                ]
+            });
+
+            // Gestion des morts
+            if (activeDefender.troops <= 0) {
+                activeDefender.troops = 0;
+                defenders.shift(); // Il sort de la file active
+                newLogs.push({ type: 'DEATH', heroId: activeDefender.id });
+            }
+            if (activeAttacker.troops <= 0) {
+                activeAttacker.troops = 0;
+                attackers.shift(); // Il sort de la file active
+                newLogs.push({ type: 'DEATH', heroId: activeAttacker.id });
+            }
+        }
+
+        // SAUVEGARDE DE L'ÉTAT
+        const finalStatus = (attackers.length === 0 || defenders.length === 0) ? 'FINISHED' : 'IN_PROGRESS';
+        
+        // 1. Update Battle
+        await this.prisma.battle.update({
+            where: { id: battle.id },
+            data: {
+                status: finalStatus,
+                lastUpdate: new Date(lastUpdate + (roundsToPlay * ROUND_DURATION)), // On avance l'heure officielle
+                logs: newLogs
+            }
+        });
+
+        // 2. Update Heroes (Sauvegarde des PVs)
+        for (const hero of battle.heroes) {
+            // On prépare les données à mettre à jour
+            const updateData: any = { troops: hero.troops };
+
+            // SI LE COMBAT EST FINI : On libère le héros !
+            if (finalStatus === 'FINISHED') {
+                updateData.battleId = null;
+                updateData.side = null;
+                updateData.queueOrder = null;
+            }
+
+            await this.prisma.hero.update({
+                where: { id: hero.id },
+                data: updateData
+            });
         }
     }
 }

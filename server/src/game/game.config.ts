@@ -71,6 +71,7 @@ export const LEVEL_REWARDS: Record<number, { type: string }[]> = {
 export const HERO_TYPES = {
   WARRIOR: 'WARRIOR',
   ARCHER: 'ARCHER',
+  GOBLIN: 'GOBLIN',
 };
 
 export const HERO_STATS = {
@@ -78,16 +79,22 @@ export const HERO_STATS = {
     attack: 10,
     defense: 10,
     maxTroops: 100,
-    imageUrl: '/Heroes/Warrior.png' // <-- AJOUT ICI
+    imageUrl: '/Heroes/Warrior.png'
   },
   [HERO_TYPES.ARCHER]: {
     attack: 15,
     defense: 5,
     maxTroops: 80,
-    imageUrl: '/Heroes/Archer.png' // <-- Prévision pour le futur
+    imageUrl: '/Heroes/Archer.png'
+  },
+  // Un monstre faible pour tester
+  [HERO_TYPES.GOBLIN]: {
+    attack: 5,
+    defense: 2,
+    maxTroops: 50,
+    imageUrl: '/Heroes/Goblin.png'
   },
 };
-
 export const getHeroBaseStats = (type: string) => {
   return HERO_STATS[type] || HERO_STATS[HERO_TYPES.WARRIOR];
 };

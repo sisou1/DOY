@@ -7,7 +7,8 @@ defineProps({
   heroes: Array
 })
 
-const emit = defineEmits(['upgrade-action', 'refresh-request'])
+// On ajoute 'watch-battle' à la liste des emits
+const emit = defineEmits(['upgrade-action', 'refresh-request', 'watch-battle'])
 </script>
 
 <template>
@@ -20,7 +21,11 @@ const emit = defineEmits(['upgrade-action', 'refresh-request'])
     />
 
     <!-- L'interface de l'armée -->
-    <ArmyView :heroes="heroes" />
+    <!-- On écoute l'événement et on le remonte au MainGame -->
+    <ArmyView 
+      :heroes="heroes" 
+      @watch-battle="emit('watch-battle', $event)" 
+    />
   </div>
 </template>
 

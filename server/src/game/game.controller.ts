@@ -1,7 +1,10 @@
-import { Controller, Get, Post, Body, Req, UnauthorizedException, Query } from '@nestjs/common';
-import { GameService } from './game.service';
+import { 
+    Controller, Get, Post, Body, Req,
+    UnauthorizedException, Query, BadRequestException, Param // <-- AJOUTER CES IMPORTS
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthService } from '../auth/auth.service';
+import {GameService} from "./game.service";
 
 @Controller('game')
 export class GameController {
@@ -81,5 +84,27 @@ export class GameController {
     
     const profile = await this.gameService.getProfile(userId);
     return { success: true, profile };
+  }
+
+  // --- ROUTES BATAILLE ---
+
+  @Post('battle/start-pve')
+  async startPvE(@Req() req: Request) {
+    const sessionId = req.cookies?.sessionId;
+    if (!sessionId) throw new UnauthorizedException('No session');
+    const userId = this.authService.getUserIdFromSession(sessionId);
+      if (!userId) throw new UnauthorizedException('Invalid session');
+
+      const battle = await this.gameService.startPvEBattle(userId);
+    return { success: true, battle };
+  }
+
+  @Get('battle/:id')
+  async getBattle(@Param('id') id: string) {
+    const battleId = parseInt(id);
+    if (isNaN(battleId)) throw new BadRequestException('Invalid ID');
+
+    const battle = await this.gameService.getBattle(battleId);
+    return { success: true, battle };
   }
 }

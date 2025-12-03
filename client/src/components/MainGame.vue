@@ -1,27 +1,33 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import TopBar from './TopBar.vue'
 import CityScene from './CityScene.vue'
+import PvESelectionScene from './PvESelectionScene.vue'
 import BattleScene from './BattleScene.vue'
 
 // --- ETAT DU JEU ---
-const currentScene = ref('CITY') // 'CITY' | 'BATTLE'
+const currentScene = ref('CITY')
+const activeBattleId = ref(null)
+let cityPollingInterval = null
 
-// --- DONNÉES ---
-const topBarRef = ref(null)
-const buildings = ref([])
-const heroes = ref([])
+// ... (Données et logique existante inchangée) ...
+// ... existing code ...
+    // --- DONNÉES ---
+    const topBarRef = ref(null)
+    const buildings = ref([])
+    const heroes = ref([])
 
-// ... (Garde les fonctions fetchBuildings, handleUpgrade, refreshAllData telles qu'elles étaient) ...
+    // ... existing code ...
     const refreshAllData = () => {
-      // Recharge la TopBar
-      if (topBarRef.value) {
-        topBarRef.value.fetchResources()
-      }
-      // Recharge les bâtiments du Headquarters
-      fetchBuildings()
-    }
+          // Recharge la TopBar
+          if (topBarRef.value) {
+            topBarRef.value.fetchResources()
+          }
+          // Recharge les bâtiments du Headquarters
+          fetchBuildings()
+        }
 
+    // ... existing code ...
     const fetchBuildings = async () => {
       try {
         const response = await fetch('http://localhost:3000/game/my-profile', { credentials: 'include' })
@@ -38,6 +44,7 @@ const heroes = ref([])
     }
     
     const handleUpgrade = async (type) => {
+        // ... existing code ...
          try {
         const response = await fetch('http://localhost:3000/game/upgrade', {
           method: 'POST',
@@ -56,50 +63,79 @@ const heroes = ref([])
     }
 
 // --- NAVIGATION ---
-const startBattle = () => {
+
+const goToSelection = () => {
+  currentScene.value = 'PVE_SELECTION'
+}
+
+const launchBattle = (battleId) => {
+  activeBattleId.value = battleId
   currentScene.value = 'BATTLE'
 }
 
-const endBattle = () => {
+const backHome = () => {
   currentScene.value = 'CITY'
-  refreshAllData() // On rafraichit en revenant (pertes de troupes, butin...)
+  activeBattleId.value = null
+  refreshAllData()
 }
 
 onMounted(() => {
   refreshAllData()
+  
+  cityPollingInterval = setInterval(() => {
+    if (currentScene.value === 'CITY') {
+      refreshAllData()
+    }
+  }, 2000)
+})
+
+onUnmounted(() => {
+  if (cityPollingInterval) clearInterval(cityPollingInterval)
 })
 </script>
 
 <template>
   <div class="main-game-container">
-    <!-- La TopBar reste toujours visible (ou pas, à toi de voir, ici je la laisse) -->
-    <!-- On la cache en combat si tu veux une immersion totale avec v-if="currentScene !== 'BATTLE'" -->
+    
     <TopBar v-if="currentScene === 'CITY'" ref="topBarRef" :username="username" />
 
-    <!-- SCÈNE VILLE -->
+    <!-- SCÈNE VILLE : On écoute l'événement @watch-battle -->
     <CityScene 
       v-if="currentScene === 'CITY'"
       :buildings="buildings"
       :heroes="heroes"
       @upgrade-action="handleUpgrade"
       @refresh-request="refreshAllData"
+      @watch-battle="launchBattle" 
     />
 
-    <!-- SCÈNE BATAILLE -->
+    <PvESelectionScene 
+      v-if="currentScene === 'PVE_SELECTION'"
+      @start-pve="launchBattle"
+      @back-home="backHome"
+    />
+
     <BattleScene 
       v-if="currentScene === 'BATTLE'"
-      @end-battle="endBattle"
+      :battleId="activeBattleId"
+      @end-battle="backHome"
     />
     
-    <!-- Bouton temporaire pour tester le switch (à mettre dans un menu plus tard) -->
-    <button v-if="currentScene === 'CITY'" @click="startBattle" class="debug-btn">
-       ⚔️ ALLER AU COMBAT
-    </button>
+    <!-- BOUTONS D'ACTION -->
+    <div v-if="currentScene === 'CITY'" class="action-buttons">
+      <!-- Le bouton "VOIR LE COMBAT" global est supprimé. On utilise celui de l'ArmyView. -->
+      
+      <!-- On garde le bouton Attaquer pour pouvoir lancer un autre combat si on a un autre héros libre -->
+      <button @click="goToSelection" class="btn-attack">
+         ⚔️ ALLER AU COMBAT
+      </button>
+    </div>
 
   </div>
 </template>
 
 <style scoped>
+/* ... Styles inchangés ... */
 .main-game-container {
   width: 100vw;
   height: 100vh;
@@ -108,16 +144,23 @@ onMounted(() => {
   position: relative;
 }
 
-.debug-btn {
+.action-buttons {
   position: absolute;
   bottom: 20px;
   right: 20px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-attack {
   padding: 15px 30px;
   background: #c0392b;
   color: white;
   font-weight: bold;
   border: 2px solid white;
   cursor: pointer;
-  z-index: 100;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
 }
 </style>

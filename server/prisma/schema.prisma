@@ -70,11 +70,35 @@ model Hero {
   troops    Int
   maxTroops Int
 
-  profileId Int
-  profile   PlayerProfile @relation(fields: [profileId], references: [id])
+  // Relation Profile (Devenue optionnelle pour les Monstres/Bots)
+  profileId Int?
+  profile   PlayerProfile? @relation(fields: [profileId], references: [id])
+
+  // --- NOUVEAUX CHAMPS BATAILLE ---
+  battleId  Int?
+  battle    Battle? @relation(fields: [battleId], references: [id])
+
+  side      String? // "ATTACKER" ou "DEFENDER"
+  queueOrder Int?   // 0 = Combat actuel, 1 = Prochain dans la file, etc.
 
   level     Int      @default(1)
   experience Int     @default(0)
 
   createdAt DateTime @default(now())
+}
+
+// --- NOUVEAU MODÈLE ---
+model Battle {
+  id         Int      @id @default(autoincrement())
+  
+  status     String   @default("IN_PROGRESS") // "IN_PROGRESS", "FINISHED"
+  
+  createdAt  DateTime @default(now())
+  lastUpdate DateTime @default(now()) // Date du dernier calcul de rounds
+
+  // On stocke les logs sous forme de JSON pour le replay client
+  // Ex: [{ round: 1, attacker: "Hero", damage: 10 }, ...]
+  logs       Json[]   @default([]) 
+
+  heroes     Hero[]
 }
