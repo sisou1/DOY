@@ -1,6 +1,14 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { BUILDING_TYPES, getBuildingStats, getXpForNextLevel, LEVEL_REWARDS } from './game.config';
+import {
+    BUILDING_TYPES,
+    getBuildingStats,
+    getXpForNextLevel,
+    LEVEL_REWARDS,
+    HERO_TYPES,
+    getHeroBaseStats,
+    HERO_STATS // <-- Assure-toi d'importer HERO_STATS ici
+} from './game.config';
 
 @Injectable()
 export class GameService {
@@ -27,12 +35,27 @@ export class GameService {
             }
         });
 
+        // Création des bâtiments de base
         await this.prisma.building.createMany({
             data: [
                 { profileId: profile.id, type: BUILDING_TYPES.SAWMILL, level: 1, status: 'ACTIVE' },
                 { profileId: profile.id, type: BUILDING_TYPES.FARM, level: 1, status: 'ACTIVE' },
                 { profileId: profile.id, type: BUILDING_TYPES.IRON_MINE, level: 1, status: 'ACTIVE' },
             ]
+        });
+
+        // Création du Héros de départ
+        const baseStats = getHeroBaseStats(HERO_TYPES.WARRIOR);
+        await this.prisma.hero.create({
+            data: {
+                profileId: profile.id,
+                name: 'General',
+                type: HERO_TYPES.WARRIOR,
+                attack: baseStats.attack,
+                defense: baseStats.defense,
+                troops: baseStats.maxTroops,
+                maxTroops: baseStats.maxTroops,
+            }
         });
 
         await this.recalculateProduction(profile.id);
@@ -78,8 +101,9 @@ export class GameService {
             where: { userId },
             include: {
                 buildings: true,
+                heroes: true,
                 user: {
-                    select: { username: true, isDev: true } // On ne prend que ce qui nous intéresse (pas le mot de passe !)
+                    select: { username: true, isDev: true }
                 }
             }
         });
@@ -90,7 +114,10 @@ export class GameService {
 
         const refreshedProfile = await this.prisma.playerProfile.findUnique({
             where: { id: profile.id },
-            include: { buildings: true },
+            include: {
+                buildings: true,
+                heroes: true
+            },
         });
 
         if (!refreshedProfile) return null;
@@ -116,14 +143,28 @@ export class GameService {
             },
             include: {
                 buildings: true,
+                heroes: true,
                 user: {
                     select: { username: true, isDev: true }
                 }
             },
         });
 
-        return updatedProfile;
-    }
+            // --- TRANSFORMATION DES DONNÉES AVANT ENVOI ---
+            // On ajoute l'URL de l'image dynamiquement en fonction du type
+            const formattedHeroes = updatedProfile.heroes.map(hero => {
+                const stats = HERO_STATS[hero.type];
+                return {
+                    ...hero,
+                    imageUrl: stats ? stats.imageUrl : '/Heroes/Warrior.png' // Fallback sécurité
+                };
+            });
+
+            return {
+                ...updatedProfile,
+                heroes: formattedHeroes
+            };
+        }
 
     async recalculateProduction(profileId: number) {
         const buildings = await this.prisma.building.findMany({
@@ -211,7 +252,10 @@ export class GameService {
     async resetProfile(userId: number) {
         const profile = await this.prisma.playerProfile.findUnique({ where: { userId } });
         if (profile) {
+            // IMPORTANT : On supprime d'abord les dépendances
             await this.prisma.building.deleteMany({ where: { profileId: profile.id } });
+            await this.prisma.hero.deleteMany({ where: { profileId: profile.id } }); // Suppression des héros
+            
             await this.prisma.playerProfile.delete({ where: { id: profile.id } });
         }
         return this.createProfile(userId);

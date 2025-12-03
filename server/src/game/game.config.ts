@@ -64,5 +64,30 @@ export const LEVEL_REWARDS: Record<number, { type: string }[]> = {
   20: [{ type: BUILDING_TYPES.SAWMILL }, { type: BUILDING_TYPES.IRON_MINE }],
   25: [{ type: BUILDING_TYPES.FARM }, { type: BUILDING_TYPES.IRON_MINE }],
   30: [{ type: BUILDING_TYPES.SAWMILL }, { type: BUILDING_TYPES.IRON_MINE }],
-  // Tu peux continuer la liste ici...
+};
+
+// --- CONFIG HÉROS ---
+
+export const HERO_TYPES = {
+  WARRIOR: 'WARRIOR',
+  ARCHER: 'ARCHER',
+};
+
+export const HERO_STATS = {
+  [HERO_TYPES.WARRIOR]: {
+    attack: 10,
+    defense: 10,
+    maxTroops: 100,
+    imageUrl: '/Heroes/Warrior.png' // <-- AJOUT ICI
+  },
+  [HERO_TYPES.ARCHER]: {
+    attack: 15,
+    defense: 5,
+    maxTroops: 80,
+    imageUrl: '/Heroes/Archer.png' // <-- Prévision pour le futur
+  },
+};
+
+export const getHeroBaseStats = (type: string) => {
+  return HERO_STATS[type] || HERO_STATS[HERO_TYPES.WARRIOR];
 };

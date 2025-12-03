@@ -39,6 +39,7 @@ model PlayerProfile {
   lastUpdate DateTime @default(now())
 
   buildings Building[]
+  heroes    Hero[]
 }
 
 model Building {
@@ -56,4 +57,24 @@ model Building {
 
   // Si en construction/upgrade
   constructionEndsAt DateTime?
+}
+
+model Hero {
+  id        Int      @id @default(autoincrement())
+
+  name      String
+  type      String
+
+  attack    Int
+  defense   Int
+  troops    Int
+  maxTroops Int
+
+  profileId Int
+  profile   PlayerProfile @relation(fields: [profileId], references: [id])
+
+  level     Int      @default(1)
+  experience Int     @default(0)
+
+  createdAt DateTime @default(now())
 }

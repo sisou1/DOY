@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import LoginPage from './components/LoginPage.vue'
-import GamePage from './components/GamePage.vue'
+import MainGame from './components/MainGame.vue'
 
 const currentUser = ref(null)
 
@@ -12,7 +12,7 @@ const onLoginSuccess = (username) => {
 
 <template>
   <!-- Si on a un user, on affiche le jeu, sinon le login -->
-  <GamePage 
+  <MainGame
     v-if="currentUser" 
     :username="currentUser" 
   />
