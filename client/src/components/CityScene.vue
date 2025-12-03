@@ -1,14 +1,12 @@
 <script setup>
 import HeadquartersView from './HeadquartersView.vue'
-import ArmyView from './ArmyView.vue'
+// ArmyView import supprimé
 
 defineProps({
-  buildings: Array,
-  heroes: Array
+  buildings: Array
 })
 
-// On ajoute 'watch-battle' à la liste des emits
-const emit = defineEmits(['upgrade-action', 'refresh-request', 'watch-battle'])
+const emit = defineEmits(['upgrade-action', 'refresh-request']) // 'watch-battle' supprimé car géré plus haut
 </script>
 
 <template>
@@ -19,13 +17,8 @@ const emit = defineEmits(['upgrade-action', 'refresh-request', 'watch-battle'])
         @upgrade-action="emit('upgrade-action', $event)"
         @refresh-request="emit('refresh-request')"
     />
-
-    <!-- L'interface de l'armée -->
-    <!-- On écoute l'événement et on le remonte au MainGame -->
-    <ArmyView 
-      :heroes="heroes" 
-      @watch-battle="emit('watch-battle', $event)" 
-    />
+    
+    <!-- ArmyView RETIRÉ D'ICI -->
   </div>
 </template>
 

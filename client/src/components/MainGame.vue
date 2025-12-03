@@ -1,17 +1,16 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted} from 'vue'
 import TopBar from './TopBar.vue'
 import CityScene from './CityScene.vue'
 import PvESelectionScene from './PvESelectionScene.vue'
 import BattleScene from './BattleScene.vue'
+import ArmyView from './ArmyView.vue' // <-- On importe ArmyView ici maintenant
 
 // --- ETAT DU JEU ---
 const currentScene = ref('CITY')
 const activeBattleId = ref(null)
 let cityPollingInterval = null
 
-// ... (Données et logique existante inchangée) ...
-// ... existing code ...
     // --- DONNÉES ---
     const topBarRef = ref(null)
     const buildings = ref([])
@@ -82,10 +81,9 @@ const backHome = () => {
 onMounted(() => {
   refreshAllData()
   
+  // On garde le polling, il est utile même en combat pour mettre à jour la liste des armées
   cityPollingInterval = setInterval(() => {
-    if (currentScene.value === 'CITY') {
       refreshAllData()
-    }
   }, 2000)
 })
 
@@ -97,16 +95,24 @@ onUnmounted(() => {
 <template>
   <div class="main-game-container">
     
-    <TopBar v-if="currentScene === 'CITY'" ref="topBarRef" :username="username" />
+    <!-- TopBar visible PARTOUT sauf en combat si tu veux (ici je la laisse tout le temps ou selon ta préférence) -->
+    <!-- Si tu veux la cacher en combat : v-if="currentScene !== 'BATTLE'" -->
+    <TopBar v-if="currentScene !== 'BATTLE'" ref="topBarRef" :username="username" />
 
-    <!-- SCÈNE VILLE : On écoute l'événement @watch-battle -->
+    <!-- ARMY VIEW GLOBALE : Visible tout le temps, par dessus les scènes -->
+    <!-- On écoute l'événement @watch-battle pour changer de scène dynamiquement -->
+    <ArmyView 
+      :heroes="heroes" 
+      @watch-battle="launchBattle"
+      class="global-army-view"
+    />
+
+    <!-- LES SCÈNES -->
     <CityScene 
       v-if="currentScene === 'CITY'"
       :buildings="buildings"
-      :heroes="heroes"
       @upgrade-action="handleUpgrade"
       @refresh-request="refreshAllData"
-      @watch-battle="launchBattle" 
     />
 
     <PvESelectionScene 
@@ -121,13 +127,10 @@ onUnmounted(() => {
       @end-battle="backHome"
     />
     
-    <!-- BOUTONS D'ACTION -->
+    <!-- BOUTONS D'ACTION (Uniquement en Ville) -->
     <div v-if="currentScene === 'CITY'" class="action-buttons">
-      <!-- Le bouton "VOIR LE COMBAT" global est supprimé. On utilise celui de l'ArmyView. -->
-      
-      <!-- On garde le bouton Attaquer pour pouvoir lancer un autre combat si on a un autre héros libre -->
       <button @click="goToSelection" class="btn-attack">
-         ⚔️ ALLER AU COMBAT
+         💀 PVE
       </button>
     </div>
 
@@ -135,13 +138,20 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* ... Styles inchangés ... */
 .main-game-container {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
   background-color: #111;
   position: relative;
+}
+
+/* On force le positionnement pour être sûr qu'il reste en haut à gauche peu importe la scène */
+.global-army-view {
+  position: fixed; /* Fixed pour rester au même endroit même si le reste scroll/bouge */
+  top: 80px;
+  left: 20px;
+  z-index: 1000; /* Au dessus de tout, même de la BattleScene */
 }
 
 .action-buttons {
@@ -162,5 +172,9 @@ onUnmounted(() => {
   border: 2px solid white;
   cursor: pointer;
   box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  font-size: 1.2rem;
+}
+.btn-attack:hover {
+  background: #e74c3c;
 }
 </style>
