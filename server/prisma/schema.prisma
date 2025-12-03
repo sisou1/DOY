@@ -36,7 +36,8 @@ model PlayerProfile {
   level        Int @default(1)
   experience   Int @default(0)
 
-  lastUpdate DateTime @default(now())
+  lastUpdate      DateTime @default(now())
+  lastRegenUpdate DateTime @default(now())
 
   buildings Building[]
   heroes    Hero[]

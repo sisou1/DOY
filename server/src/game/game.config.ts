@@ -1,3 +1,5 @@
+export const ROUND_DURATION = 1000;
+
 export const BUILDING_TYPES = {
   SAWMILL: 'SAWMILL',
   FARM: 'FARM',

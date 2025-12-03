@@ -7,11 +7,9 @@ import {
     LEVEL_REWARDS,
     HERO_TYPES,
     getHeroBaseStats,
-    HERO_STATS
+    HERO_STATS,
+    ROUND_DURATION
 } from './game.config';
-
-// Constante : 1 Round = 1 Seconde (1000ms)
-const ROUND_DURATION = 1000;
 
 @Injectable()
 export class GameService {
@@ -38,7 +36,6 @@ export class GameService {
             }
         });
 
-        // Création des bâtiments de base
         await this.prisma.building.createMany({
             data: [
                 { profileId: profile.id, type: BUILDING_TYPES.SAWMILL, level: 1, status: 'ACTIVE' },
@@ -47,7 +44,6 @@ export class GameService {
             ]
         });
 
-        // Création du Héros de départ
         const baseStats = getHeroBaseStats(HERO_TYPES.WARRIOR);
         await this.prisma.hero.create({
             data: {
@@ -72,30 +68,27 @@ export class GameService {
     private async processFinishedConstructions(profileId: number) {
         const now = new Date();
 
-        // 1. Trouver les bâtiments dont la construction est finie (date passée)
         const finishedBuildings = await this.prisma.building.findMany({
             where: {
                 profileId,
                 status: 'UPGRADING',
-                constructionEndsAt: { lte: now } // "Less Than or Equal to" now
+                constructionEndsAt: { lte: now }
             }
         });
 
         if (finishedBuildings.length === 0) return;
 
-        // 2. Pour chaque bâtiment fini, on applique le niveau
         for (const building of finishedBuildings) {
             await this.prisma.building.update({
                 where: { id: building.id },
                 data: {
-                    level: { increment: 1 }, // On monte le niveau
-                    status: 'ACTIVE',        // On repasse en actif
-                    constructionEndsAt: null // On vide le timer
+                    level: { increment: 1 },
+                    status: 'ACTIVE',
+                    constructionEndsAt: null
                 }
             });
         }
 
-        // 3. On recalcul la production car les niveaux ont changé
         await this.recalculateProduction(profileId);
     }
 
@@ -113,31 +106,23 @@ export class GameService {
 
         if (!profile) return null;
 
-        // --- NOUVEAU : MISE À JOUR DES BATAILLES EN COURS ---
-        // On vérifie si un héros est dans une bataille active
+        // On vérifie si un héros est dans une bataille active et on charge la relation
         const activeHero = profile.heroes.find(h => h.battleId !== null);
-
         if (activeHero && activeHero.battleId) {
-            // On force le calcul de cette bataille pour mettre à jour les PV
             const battle = await this.prisma.battle.findUnique({
                 where: { id: activeHero.battleId },
                 include: { heroes: true }
             });
-
             if (battle && battle.status === 'IN_PROGRESS') {
                 await this.processBattleRounds(battle);
             }
         }
-        // -----------------------------------------------------
 
         await this.processFinishedConstructions(profile.id);
 
         const refreshedProfile = await this.prisma.playerProfile.findUnique({
             where: { id: profile.id },
-            include: {
-                buildings: true,
-                heroes: true
-            },
+            include: { buildings: true, heroes: true },
         });
 
         if (!refreshedProfile) return null;
@@ -145,21 +130,71 @@ export class GameService {
         const now = new Date();
         const lastUpdate = new Date(refreshedProfile.lastUpdate);
         const diffInMs = now.getTime() - lastUpdate.getTime();
+
+        if (diffInMs <= 0) return refreshedProfile;
+
         const diffInHours = diffInMs / (1000 * 60 * 60);
 
-        if (diffInHours <= 0) return refreshedProfile;
-
-        const newFood = refreshedProfile.food + (refreshedProfile.foodPerHour * diffInHours);
+        let newFood = refreshedProfile.food + (refreshedProfile.foodPerHour * diffInHours);
         const newWood = refreshedProfile.wood + (refreshedProfile.woodPerHour * diffInHours);
         const newIron = refreshedProfile.iron + (refreshedProfile.ironPerHour * diffInHours);
 
+        // --- LOGIQUE DE RÉGÉNÉRATION (Corrigée - Pourcentage) ---
+        const lastRegenUpdate = new Date(refreshedProfile.lastRegenUpdate || refreshedProfile.lastUpdate);
+        const diffRegenMs = now.getTime() - lastRegenUpdate.getTime();
+
+        const REGEN_TICK_MS = 10000; // 10 secondes
+        const REGEN_PERCENT = 0.10; // 10%
+        const FOOD_COST_PER_TROOP = 1;
+
+        const ticksPassed = Math.floor(diffRegenMs / REGEN_TICK_MS);
+        let newLastRegenUpdate = lastRegenUpdate;
+
+        if (ticksPassed > 0) {
+            // Héros éligibles : Blessés et PAS en combat
+            const injuredHeroes = refreshedProfile.heroes.filter(h =>
+                h.troops < h.maxTroops && !h.battleId
+            );
+
+            let totalFoodCost = 0;
+
+            for (const hero of injuredHeroes) {
+                const missingTroops = hero.maxTroops - hero.troops;
+
+                const troopsPerTick = Math.ceil(hero.maxTroops * REGEN_PERCENT);
+
+                const potentialRegen = ticksPassed * troopsPerTick;
+
+                const currentFoodStock = newFood - totalFoodCost;
+                const maxAffordable = Math.floor(currentFoodStock / FOOD_COST_PER_TROOP);
+
+                const actualRegen = Math.min(missingTroops, potentialRegen, maxAffordable);
+
+                if (actualRegen > 0) {
+                    hero.troops += actualRegen;
+                    totalFoodCost += (actualRegen * FOOD_COST_PER_TROOP);
+
+                    await this.prisma.hero.update({
+                        where: { id: hero.id },
+                        data: { troops: hero.troops }
+                    });
+                }
+            }
+
+            newFood -= totalFoodCost;
+
+            newLastRegenUpdate = new Date(lastRegenUpdate.getTime() + (ticksPassed * REGEN_TICK_MS));
+        }
+
+        // SAUVEGARDE FINALE DU PROFIL
         const updatedProfile = await this.prisma.playerProfile.update({
             where: { id: refreshedProfile.id },
             data: {
-                food: newFood,
+                food: Math.max(0, newFood),
                 wood: newWood,
                 iron: newIron,
-                lastUpdate: now,
+                lastUpdate: now, // Toujours maintenant pour les ressources
+                lastRegenUpdate: newLastRegenUpdate, // Avance par paliers de 5s
             },
             include: {
                 buildings: true,
@@ -170,21 +205,19 @@ export class GameService {
             },
         });
 
-            // --- TRANSFORMATION DES DONNÉES AVANT ENVOI ---
-            // On ajoute l'URL de l'image dynamiquement en fonction du type
-            const formattedHeroes = updatedProfile.heroes.map(hero => {
-                const stats = HERO_STATS[hero.type];
-                return {
-                    ...hero,
-                    imageUrl: stats ? stats.imageUrl : '/Heroes/Warrior.png' // Fallback sécurité
-                };
-            });
-
+        const formattedHeroes = updatedProfile.heroes.map(hero => {
+            const stats = HERO_STATS[hero.type];
             return {
-                ...updatedProfile,
-                heroes: formattedHeroes
+                ...hero,
+                imageUrl: stats ? stats.imageUrl : '/Heroes/Warrior.png'
             };
-        }
+        });
+
+        return {
+            ...updatedProfile,
+            heroes: formattedHeroes
+        };
+    }
 
     async recalculateProduction(profileId: number) {
         const buildings = await this.prisma.building.findMany({
@@ -215,16 +248,12 @@ export class GameService {
     }
 
     async upgradeBuilding(userId: number, type: string) {
-        // On utilise getProfile pour s'assurer que les timers précédents sont traités
         const profile = await this.getProfile(userId);
         if (!profile) throw new BadRequestException('Profile not found');
 
-        // On cherche un bâtiment de ce type qui est prêt à être amélioré
-        // On ne prend PAS ceux qui sont déjà en 'UPGRADING'
         const existingBuilding = profile.buildings.find(b => b.type === type && b.status === 'ACTIVE');
 
         if (!existingBuilding) {
-            // Soit il n'existe pas, soit il est déjà en train d'être amélioré
             const isUpgrading = profile.buildings.find(b => b.type === type && b.status === 'UPGRADING');
             if (isUpgrading) throw new BadRequestException('Building is already upgrading');
 
@@ -242,7 +271,6 @@ export class GameService {
             throw new BadRequestException('Not enough resources');
         }
 
-        // 1. Paiement immédiat
         await this.prisma.playerProfile.update({
             where: { id: profile.id },
             data: {
@@ -252,11 +280,9 @@ export class GameService {
             }
         });
 
-        // 2. Calcul de la date de fin
         const constructionTimeMs = stats.time * 1000; // stats.time est en secondes
         const constructionEndsAt = new Date(Date.now() + constructionTimeMs);
 
-        // 3. Mise à jour du statut : On ne monte PAS le niveau tout de suite
         await this.prisma.building.update({
             where: { id: existingBuilding.id },
             data: {
@@ -265,17 +291,15 @@ export class GameService {
             }
         });
 
-        // On renvoie le profil à jour (le front verra le status UPGRADING)
         return this.getProfile(userId);
     }
 
     async resetProfile(userId: number) {
         const profile = await this.prisma.playerProfile.findUnique({ where: { userId } });
         if (profile) {
-            // IMPORTANT : On supprime d'abord les dépendances
             await this.prisma.building.deleteMany({ where: { profileId: profile.id } });
             await this.prisma.hero.deleteMany({ where: { profileId: profile.id } }); // Suppression des héros
-            
+
             await this.prisma.playerProfile.delete({ where: { id: profile.id } });
         }
         return this.createProfile(userId);
@@ -332,11 +356,9 @@ export class GameService {
         const profile = await this.getProfile(userId);
         if (!profile) throw new BadRequestException('Profile not found');
 
-        // 1. Trouver un héros disponible (pas déjà en combat)
         const myHero = profile.heroes.find(h => h.troops > 0 && !h.battleId);
         if (!myHero) throw new BadRequestException('No available heroes (dead or busy)');
 
-        // 2. Créer le Monstre (Bot)
         const goblinStats = getHeroBaseStats(HERO_TYPES.GOBLIN);
         const mob = await this.prisma.hero.create({
             data: {
@@ -347,24 +369,23 @@ export class GameService {
                 troops: goblinStats.maxTroops,
                 maxTroops: goblinStats.maxTroops,
                 side: 'DEFENDER',
-                queueOrder: 0 // Premier en ligne
+                queueOrder: 0
             }
         });
 
-        // 3. Mettre à jour mon héros
         await this.prisma.hero.update({
             where: { id: myHero.id },
             data: {
                 side: 'ATTACKER',
-                queueOrder: 0 // Premier en ligne
+                queueOrder: 0
             }
         });
 
-        // 4. Créer l'instance de Bataille
-        const battle = await this.prisma.battle.create({
+        // 4. Créer et retourner la bataille directement (plus de variable intermédiaire)
+        return this.prisma.battle.create({
             data: {
                 status: 'IN_PROGRESS',
-                lastUpdate: new Date(), // Le chrono démarre maintenant
+                lastUpdate: new Date(),
                 heroes: {
                     connect: [
                         { id: myHero.id },
@@ -374,12 +395,9 @@ export class GameService {
             },
             include: { heroes: true }
         });
-
-        return battle;
     }
 
     async getBattle(battleId: number) {
-        // 1. Récupérer l'état brut en base
         let battle = await this.prisma.battle.findUnique({
             where: { id: battleId },
             include: { heroes: { orderBy: { queueOrder: 'asc' } } }
@@ -387,10 +405,9 @@ export class GameService {
 
         if (!battle) throw new BadRequestException('Battle not found');
 
-        // 2. SI le combat est en cours, on calcule ce qui s'est passé depuis la dernière fois
         if (battle.status === 'IN_PROGRESS') {
             await this.processBattleRounds(battle);
-            
+
             // On recharge la version à jour
             battle = await this.prisma.battle.findUnique({
                 where: { id: battleId },
@@ -401,26 +418,21 @@ export class GameService {
         return battle;
     }
 
-    // C'est ici que la magie opère (Simulation Lazy)
     private async processBattleRounds(battle: any) {
         const now = new Date().getTime();
         const lastUpdate = new Date(battle.lastUpdate).getTime();
-        
-        // Combien de temps s'est écoulé ?
+
         const timeDiff = now - lastUpdate;
-        
-        // Combien de rounds entiers on doit jouer ?
+
         const roundsToPlay = Math.floor(timeDiff / ROUND_DURATION);
 
-        if (roundsToPlay <= 0) return; // Rien à faire, on est à jour
+        if (roundsToPlay <= 0) return;
 
         let newLogs = [...(battle.logs as any[])];
         let isBattleFinished = false;
-        
-        // On récupère les listes vivantes
-        // Note: on travaille sur des objets JS ici, on sauvegardera à la fin
-        const attackers = battle.heroes.filter(h => h.side === 'ATTACKER' && h.troops > 0);
-        const defenders = battle.heroes.filter(h => h.side === 'DEFENDER' && h.troops > 0);
+
+        const attackers = battle.heroes.filter((h: any) => h.side === 'ATTACKER' && h.troops > 0);
+        const defenders = battle.heroes.filter((h: any) => h.side === 'DEFENDER' && h.troops > 0);
 
         // BOUCLE DE RATTRAPAGE TEMPOREL
         for (let i = 0; i < roundsToPlay; i++) {
@@ -429,20 +441,15 @@ export class GameService {
                 break;
             }
 
-            // Le premier de chaque file se tape dessus
             const activeAttacker = attackers[0];
             const activeDefender = defenders[0];
 
-            // Logique simple : Dégâts = Attaque (On pourra complexifier avec la défense plus tard)
-            // On peut dire Dégats = Max(1, Attaque - Defense/2)
             const dmgToDefender = Math.max(1, Math.floor(activeAttacker.attack - (activeDefender.defense * 0.2)));
             const dmgToAttacker = Math.max(1, Math.floor(activeDefender.attack - (activeAttacker.defense * 0.2)));
 
-            // Application des dégâts
             activeDefender.troops -= dmgToDefender;
             activeAttacker.troops -= dmgToAttacker;
 
-            // Ajout au log
             newLogs.push({
                 round_time: lastUpdate + ((i + 1) * ROUND_DURATION), // Timestamp virtuel du coup
                 actions: [
@@ -451,23 +458,20 @@ export class GameService {
                 ]
             });
 
-            // Gestion des morts
             if (activeDefender.troops <= 0) {
                 activeDefender.troops = 0;
-                defenders.shift(); // Il sort de la file active
+                defenders.shift();
                 newLogs.push({ type: 'DEATH', heroId: activeDefender.id });
             }
             if (activeAttacker.troops <= 0) {
                 activeAttacker.troops = 0;
-                attackers.shift(); // Il sort de la file active
+                attackers.shift();
                 newLogs.push({ type: 'DEATH', heroId: activeAttacker.id });
             }
         }
 
-        // SAUVEGARDE DE L'ÉTAT
         const finalStatus = (attackers.length === 0 || defenders.length === 0) ? 'FINISHED' : 'IN_PROGRESS';
-        
-        // 1. Update Battle
+
         await this.prisma.battle.update({
             where: { id: battle.id },
             data: {
@@ -477,12 +481,9 @@ export class GameService {
             }
         });
 
-        // 2. Update Heroes (Sauvegarde des PVs)
         for (const hero of battle.heroes) {
-            // On prépare les données à mettre à jour
             const updateData: any = { troops: hero.troops };
 
-            // SI LE COMBAT EST FINI : On libère le héros !
             if (finalStatus === 'FINISHED') {
                 updateData.battleId = null;
                 updateData.side = null;

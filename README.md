@@ -61,9 +61,39 @@ npm run dev:all
 Cette commande lancera simultanément le backend et le frontend dans le même terminal (ou dans deux processus) grâce à
 concurrently.
 
+### 💡 Projet éducatif et passionné :
+
+Ce projet n’a aucune visée commerciale.
+Il s’agit d’une réinterprétation personnelle du concept du jeu Dawn of Kings pour apprendre et expérimenter avec les
+technologies web modernes.
+
 ## 🧩 Fonctionnalités (en cours)
 
-Les batailles !
+Les batailles :
+
+Faut lui dire de mettre l'attaquand d'un coté et l'autre de l'autre
+
+Faut faire le visuel des combat, au moins un peut
+
+récompense pour les victoires
+
+
+
+
+TODO : 
+
+fer a 0 mine de fer a 0
+
+Moyen de lvl up hors cheat
+
+Créer un Jira ou un truc similaire si qq1 rejoin le projet
+
+organiser le code mieux que ça surtout coté front, attention a game.service.ts
+
+Auth mieux que ça c'est une cata
+passer par Auth 0 si possible
+
+tests unitaires si possible
 
 ## Résumé simple du fonctionnement des combats
 
@@ -80,8 +110,4 @@ Le combat se poursuit jusqu’à ce qu’une des deux armées n’ait plus de tr
 vainqueur. Si plusieurs héros participent à la bataille, celui qui vient après prend alors immédiatement le relais, ce
 qui renforce encore l’effet de bras de fer entre deux lignes d’unités qui s’enchaînent.
 
-### 💡 Projet éducatif et passionné :
 
-Ce projet n’a aucune visée commerciale.
-Il s’agit d’une réinterprétation personnelle du concept du jeu Dawn of Kings pour apprendre et expérimenter avec les
-technologies web modernes.
