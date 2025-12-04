@@ -88,12 +88,16 @@ Moyen de lvl up hors cheat
 
 Créer un Jira ou un truc similaire si qq1 rejoin le projet
 
+Cookie de session pour rester connecter même après un F5 et moyen de logout
+
 organiser le code mieux que ça surtout coté front, attention a game.service.ts
 
 Auth mieux que ça c'est une cata
 passer par Auth 0 si possible
 
 tests unitaires si possible
+
+Retirer les paquet avec des vulnérabilités
 
 ## Résumé simple du fonctionnement des combats
 
