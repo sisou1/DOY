@@ -77,10 +77,7 @@ Faut faire le visuel des combat, au moins un peut
 
 récompense pour les victoires
 
-
-
-
-TODO : 
+TODO :
 
 fer a 0 mine de fer a 0
 
@@ -98,6 +95,16 @@ passer par Auth 0 si possible
 tests unitaires si possible
 
 Retirer les paquet avec des vulnérabilités
+
+Erreurs :
+
+Arrive en console lorsque un utilisateur se connecte je crois:
+[0] (node:15756) Warning: Setting the NODE_TLS_REJECT_UNAUTHORIZED environment variable to '0' makes TLS connections and
+HTTPS requests insecure by disabling certificate verification.
+[0] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Quand un user se connecte il y a marqué 3 connection a la BDD c'est pas normal 
+On aimerais une connexion unique par back lancer ?
 
 ## Résumé simple du fonctionnement des combats
 
