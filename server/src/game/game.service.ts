@@ -360,7 +360,10 @@ export class GameService {
         if (!myHero) throw new BadRequestException('No available heroes (dead or busy)');
 
         const goblinStats = getHeroBaseStats(HERO_TYPES.GOBLIN);
-        const mob = await this.prisma.hero.create({
+
+        // --- MODIFICATION : CRÉATION DE 2 GOBELINS ---
+        // Gobelin 1
+        const goblin1 = await this.prisma.hero.create({
             data: {
                 name: 'Goblin Scout',
                 type: HERO_TYPES.GOBLIN,
@@ -369,10 +372,25 @@ export class GameService {
                 troops: goblinStats.maxTroops,
                 maxTroops: goblinStats.maxTroops,
                 side: 'DEFENDER',
-                queueOrder: 0
+                queueOrder: 0 // Actif immédiatement
             }
         });
 
+        // Gobelin 2
+        const goblin2 = await this.prisma.hero.create({
+            data: {
+                name: 'Goblin Warrior', // Un nom légèrement différent
+                type: HERO_TYPES.GOBLIN,
+                attack: goblinStats.attack + 2, // Un peu plus fort
+                defense: goblinStats.defense,
+                troops: goblinStats.maxTroops,
+                maxTroops: goblinStats.maxTroops,
+                side: 'DEFENDER',
+                queueOrder: 1 // Arrive après la mort du premier
+            }
+        });
+
+        // 3. Engager mon héros
         await this.prisma.hero.update({
             where: { id: myHero.id },
             data: {
@@ -381,7 +399,7 @@ export class GameService {
             }
         });
 
-        // 4. Créer et retourner la bataille directement (plus de variable intermédiaire)
+        // 4. Créer la bataille avec les 3 participants
         return this.prisma.battle.create({
             data: {
                 status: 'IN_PROGRESS',
@@ -389,7 +407,8 @@ export class GameService {
                 heroes: {
                     connect: [
                         { id: myHero.id },
-                        { id: mob.id }
+                        { id: goblin1.id },
+                        { id: goblin2.id }
                     ]
                 }
             },
@@ -431,12 +450,18 @@ export class GameService {
         let newLogs = [...(battle.logs as any[])];
         let isBattleFinished = false;
 
-        const attackers = battle.heroes.filter((h: any) => h.side === 'ATTACKER' && h.troops > 0);
-        const defenders = battle.heroes.filter((h: any) => h.side === 'DEFENDER' && h.troops > 0);
+        // IMPORTANT : On trie par queueOrder pour être sûr que le [0] est bien le premier de la file
+        const attackers = battle.heroes
+            .filter((h: any) => h.side === 'ATTACKER' && h.troops > 0)
+            .sort((a: any, b: any) => a.queueOrder - b.queueOrder);
+            
+        const defenders = battle.heroes
+            .filter((h: any) => h.side === 'DEFENDER' && h.troops > 0)
+            .sort((a: any, b: any) => a.queueOrder - b.queueOrder);
 
-        // BOUCLE DE RATTRAPAGE TEMPOREL
         for (let i = 0; i < roundsToPlay; i++) {
-            if (attackers.length === 0 || defenders.length === 0) {
+            // ... (Logique de combat inchangée : calcul dégats, ajout logs) ...
+             if (attackers.length === 0 || defenders.length === 0) {
                 isBattleFinished = true;
                 break;
             }
@@ -451,7 +476,7 @@ export class GameService {
             activeAttacker.troops -= dmgToAttacker;
 
             newLogs.push({
-                round_time: lastUpdate + ((i + 1) * ROUND_DURATION), // Timestamp virtuel du coup
+                round_time: lastUpdate + ((i + 1) * ROUND_DURATION),
                 actions: [
                     { from: activeAttacker.id, to: activeDefender.id, dmg: dmgToDefender },
                     { from: activeDefender.id, to: activeAttacker.id, dmg: dmgToAttacker }
@@ -476,15 +501,18 @@ export class GameService {
             where: { id: battle.id },
             data: {
                 status: finalStatus,
-                lastUpdate: new Date(lastUpdate + (roundsToPlay * ROUND_DURATION)), // On avance l'heure officielle
+                lastUpdate: new Date(lastUpdate + (roundsToPlay * ROUND_DURATION)),
                 logs: newLogs
             }
         });
 
+        // --- MODIFICATION ICI : LIBÉRATION DES MORTS ---
         for (const hero of battle.heroes) {
             const updateData: any = { troops: hero.troops };
 
-            if (finalStatus === 'FINISHED') {
+            // Si le combat est fini OU SI LE HÉROS EST MORT
+            // On le libère immédiatement.
+            if (finalStatus === 'FINISHED' || hero.troops <= 0) {
                 updateData.battleId = null;
                 updateData.side = null;
                 updateData.queueOrder = null;
