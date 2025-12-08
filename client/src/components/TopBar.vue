@@ -153,7 +153,7 @@ defineExpose({
       </div>
 
       <div class="resource-item">
-        <span class="icon">⛓️</span>
+        <span class="icon">🪨</span>
         <div class="res-details">
           <span class="amount">{{ formatNumber(resources.iron) }}</span>
           <span class="rate">+{{ production.iron }}/h</span>
