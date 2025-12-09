@@ -1,4 +1,7 @@
-export const ROUND_DURATION = 1000;
+// Durée d'un round en millisecondes (doit être alignée avec le front)
+export const ROUND_DURATION = 1500;
+// Nouveau: nombre de "lignes" par héros (fractionnement des troupes)
+export const LINES_PER_HERO = 3;
 
 export const BUILDING_TYPES = {
   SAWMILL: 'SAWMILL',

@@ -8,7 +8,8 @@ import {
     HERO_TYPES,
     getHeroBaseStats,
     HERO_STATS,
-    ROUND_DURATION
+    ROUND_DURATION,
+    LINES_PER_HERO
 } from './game.config';
 
 @Injectable()
@@ -434,7 +435,15 @@ export class GameService {
             });
         }
 
-        return battle;
+        // ---- UI v2: ajouter un snapshot déterministe pour le front ----
+        const ui = this.buildUiSnapshot(battle);
+        // On retourne un objet plain avec des méta supplémentaires
+        return {
+            ...battle,
+            version: 2,
+            serverTime: Date.now(),
+            ui
+        } as any;
     }
 
     private async processBattleRounds(battle: any) {
@@ -459,11 +468,31 @@ export class GameService {
             .filter((h: any) => h.side === 'DEFENDER' && h.troops > 0)
             .sort((a: any, b: any) => a.queueOrder - b.queueOrder);
 
-        for (let i = 0; i < roundsToPlay; i++) {
-            // ... (Logique de combat inchangée : calcul dégats, ajout logs) ...
-             if (attackers.length === 0 || defenders.length === 0) {
+        // Pour une meilleure lisibilité côté front: on ne joue qu'UN seul round par requête.
+        // Si du retard s'est accumulé, il sera rattrapé round par round aux requêtes suivantes.
+        const roundsToActuallyPlay = Math.min(roundsToPlay, 1);
+
+        for (let i = 0; i < roundsToActuallyPlay; i++) {
+            const roundTime = lastUpdate + ((i + 1) * ROUND_DURATION);
+
+            // Si l'un des camps est vide, la bataille est terminée.
+            if (attackers.length === 0 || defenders.length === 0) {
                 isBattleFinished = true;
                 break;
+            }
+
+            // 1) Gérer les entrées différées planifiées via logs (round d'animation sans dégâts)
+            const scheduledEnters = (newLogs as any[]).filter(l => l && l.type === 'SCHEDULE_ENTER' && l.at === roundTime);
+            if (scheduledEnters.length > 0) {
+                for (const ev of scheduledEnters) {
+                    if (ev.enterType === 'LINE_ENTER') {
+                        newLogs.push({ type: 'LINE_ENTER', heroId: ev.heroId, lineIndex: ev.lineIndex, at: roundTime });
+                    } else if (ev.enterType === 'HERO_ENTER') {
+                        newLogs.push({ type: 'HERO_ENTER', heroId: ev.heroId, at: roundTime });
+                    }
+                }
+                // Round réservé aux entrées: pas de dégâts ce tour
+                continue;
             }
 
             const activeAttacker = attackers[0];
@@ -472,26 +501,58 @@ export class GameService {
             const dmgToDefender = Math.max(1, Math.floor(activeAttacker.attack - (activeDefender.defense * 0.2)));
             const dmgToAttacker = Math.max(1, Math.floor(activeDefender.attack - (activeAttacker.defense * 0.2)));
 
-            activeDefender.troops -= dmgToDefender;
-            activeAttacker.troops -= dmgToAttacker;
+            // Dégâts limités à la ligne courante
+            const defLine = this.getCurrentLineState(activeDefender.maxTroops, activeDefender.troops);
+            const atkLine = this.getCurrentLineState(activeAttacker.maxTroops, activeAttacker.troops);
+
+            const appliedToDef = Math.min(dmgToDefender, defLine.currentHp);
+            const appliedToAtk = Math.min(dmgToAttacker, atkLine.currentHp);
+
+            activeDefender.troops = Math.max(0, activeDefender.troops - appliedToDef);
+            activeAttacker.troops = Math.max(0, activeAttacker.troops - appliedToAtk);
 
             newLogs.push({
-                round_time: lastUpdate + ((i + 1) * ROUND_DURATION),
+                round_time: roundTime,
                 actions: [
-                    { from: activeAttacker.id, to: activeDefender.id, dmg: dmgToDefender },
-                    { from: activeDefender.id, to: activeAttacker.id, dmg: dmgToAttacker }
+                    { from: activeAttacker.id, to: activeDefender.id, dmg: appliedToDef },
+                    { from: activeDefender.id, to: activeAttacker.id, dmg: appliedToAtk }
                 ]
             });
 
+            // Détection des lignes tombées ce round
+            const defLineAfter = this.getCurrentLineState(activeDefender.maxTroops, activeDefender.troops);
+            if (defLine.currentHp > 0 && defLineAfter.currentIndex > defLine.currentIndex) {
+                newLogs.push({ type: 'LINE_DOWN', heroId: activeDefender.id, lineIndex: defLine.currentIndex, at: roundTime });
+                // Planifier l'entrée de la prochaine ligne (si encore vivant) au round suivant
+                if (activeDefender.troops > 0) {
+                    newLogs.push({ type: 'SCHEDULE_ENTER', enterType: 'LINE_ENTER', heroId: activeDefender.id, lineIndex: defLineAfter.currentIndex, at: roundTime + ROUND_DURATION });
+                }
+            }
+            const atkLineAfter = this.getCurrentLineState(activeAttacker.maxTroops, activeAttacker.troops);
+            if (atkLine.currentHp > 0 && atkLineAfter.currentIndex > atkLine.currentIndex) {
+                newLogs.push({ type: 'LINE_DOWN', heroId: activeAttacker.id, lineIndex: atkLine.currentIndex, at: roundTime });
+                if (activeAttacker.troops > 0) {
+                    newLogs.push({ type: 'SCHEDULE_ENTER', enterType: 'LINE_ENTER', heroId: activeAttacker.id, lineIndex: atkLineAfter.currentIndex, at: roundTime + ROUND_DURATION });
+                }
+            }
+
+            // Détections de morts et file d'attente de l'entrée du prochain héros
             if (activeDefender.troops <= 0) {
                 activeDefender.troops = 0;
                 defenders.shift();
-                newLogs.push({ type: 'DEATH', heroId: activeDefender.id });
+                newLogs.push({ type: 'DEATH', heroId: activeDefender.id, at: roundTime });
+                if (defenders.length > 0) {
+                    // Le prochain héros du côté défenseur entre au round suivant
+                    newLogs.push({ type: 'SCHEDULE_ENTER', enterType: 'HERO_ENTER', heroId: defenders[0].id, at: roundTime + ROUND_DURATION });
+                }
             }
             if (activeAttacker.troops <= 0) {
                 activeAttacker.troops = 0;
                 attackers.shift();
-                newLogs.push({ type: 'DEATH', heroId: activeAttacker.id });
+                newLogs.push({ type: 'DEATH', heroId: activeAttacker.id, at: roundTime });
+                if (attackers.length > 0) {
+                    newLogs.push({ type: 'SCHEDULE_ENTER', enterType: 'HERO_ENTER', heroId: attackers[0].id, at: roundTime + ROUND_DURATION });
+                }
             }
         }
 
@@ -501,18 +562,18 @@ export class GameService {
             where: { id: battle.id },
             data: {
                 status: finalStatus,
-                lastUpdate: new Date(lastUpdate + (roundsToPlay * ROUND_DURATION)),
+                lastUpdate: new Date(lastUpdate + (Math.min(roundsToPlay, 1) * ROUND_DURATION)),
                 logs: newLogs
             }
         });
 
-        // --- MODIFICATION ICI : LIBÉRATION DES MORTS ---
+        // --- Libération des morts (NE PAS libérer tous les vivants au moment de FINISHED
+        //     pour permettre au front d'avoir un snapshot final cohérent) ---
         for (const hero of battle.heroes) {
             const updateData: any = { troops: hero.troops };
 
-            // Si le combat est fini OU SI LE HÉROS EST MORT
-            // On le libère immédiatement.
-            if (finalStatus === 'FINISHED' || hero.troops <= 0) {
+            // Si le héros est mort, on le libère immédiatement
+            if (hero.troops <= 0) {
                 updateData.battleId = null;
                 updateData.side = null;
                 updateData.queueOrder = null;
@@ -523,5 +584,127 @@ export class GameService {
                 data: updateData
             });
         }
+
+        // Optionnel: on pourrait planifier un nettoyage ultérieur des héros vivants
+        // après que le client ait accusé réception de la FIN (non nécessaire pour l'instant).
+    }
+
+    // ---- Helpers UI v2 ----
+    private getLineSizes(maxTroops: number): number[] {
+        const lines = LINES_PER_HERO;
+        const base = Math.floor((maxTroops || 0) / lines);
+        const rem = (maxTroops || 0) % lines;
+        const arr: number[] = [];
+        for (let i = 0; i < lines; i++) arr.push(base + (i < rem ? 1 : 0));
+        return arr;
+    }
+
+    private getSegments(maxTroops: number, troops: number) {
+        const sizes = this.getLineSizes(maxTroops || 0);
+        let remaining = Math.max(0, troops || 0);
+        return sizes.map((size, idx) => {
+            const hp = Math.max(0, Math.min(size, remaining));
+            remaining -= hp;
+            return { idx, hp, max: size };
+        });
+    }
+
+    private buildUiSnapshot(battle: any) {
+        const heroes = (battle.heroes || []).slice().sort((a: any, b: any) => (a.queueOrder ?? 0) - (b.queueOrder ?? 0));
+        const attackers = heroes.filter((h: any) => h.side === 'ATTACKER' && h.troops > 0);
+        const defenders = heroes.filter((h: any) => h.side === 'DEFENDER' && h.troops > 0);
+
+        const sideSnapshot = (arr: any[]) => {
+            const activeHero = arr[0];
+            let active: any = null;
+            const queue: any[] = [];
+            if (activeHero) {
+                const segs = this.getSegments(activeHero.maxTroops, activeHero.troops);
+                const firstAlive = segs.find(s => s.hp > 0);
+                if (firstAlive) {
+                    active = {
+                        heroId: activeHero.id,
+                        heroName: activeHero.name,
+                        lineIndex: firstAlive.idx,
+                        hp: firstAlive.hp,
+                        max: firstAlive.max
+                    };
+                    // rest of lines for this hero
+                    for (let i = firstAlive.idx + 1; i < segs.length; i++) {
+                        const s = segs[i];
+                        if (s.hp > 0) queue.push({
+                            heroId: activeHero.id,
+                            heroName: activeHero.name,
+                            lineIndex: s.idx,
+                            hp: s.hp,
+                            max: s.max
+                        });
+                    }
+                }
+            }
+            // other heroes lines
+            for (let h = 1; h < arr.length; h++) {
+                const hero = arr[h];
+                const segs = this.getSegments(hero.maxTroops, hero.troops);
+                for (const s of segs) {
+                    if (s.hp > 0) queue.push({
+                        heroId: hero.id,
+                        heroName: hero.name,
+                        lineIndex: s.idx,
+                        hp: s.hp,
+                        max: s.max
+                    });
+                }
+            }
+            return { active, queue };
+        };
+
+        // Phase/roundIndex à partir du dernier groupe de logs
+        const logs: any[] = (battle.logs || []) as any[];
+        let latestTime: number | null = null;
+        const timeSet = new Set<number>();
+        for (const l of logs) {
+            const t = typeof l.at === 'number' ? l.at : (typeof l.round_time === 'number' ? l.round_time : null);
+            if (t != null) { timeSet.add(t); latestTime = latestTime == null ? t : Math.max(latestTime, t); }
+        }
+        const roundIndex = timeSet.size; // nombre de groupes temporels vus
+        let phase: 'ENTER' | 'DAMAGE' | 'INIT' = 'INIT';
+        if (latestTime != null) {
+            const group = logs.filter(l => (typeof l.at === 'number' ? l.at : (typeof l.round_time === 'number' ? l.round_time : -1)) === latestTime);
+            const hasActions = group.some(l => Array.isArray(l.actions));
+            const hasEnter = group.some(l => l && (l.type === 'LINE_ENTER' || l.type === 'HERO_ENTER'));
+            if (hasActions) phase = 'DAMAGE'; else if (hasEnter) phase = 'ENTER';
+        }
+
+        const atk = sideSnapshot(attackers);
+        const def = sideSnapshot(defenders);
+
+        return {
+            phase,
+            pause: phase === 'ENTER',
+            roundIndex,
+            attacker: atk,
+            defender: def
+        };
+    }
+
+    private getCurrentLineState(maxTroops: number, remainingTroops: number) {
+        const sizes = this.getLineSizes(maxTroops);
+        const lost = Math.max(0, maxTroops - Math.max(0, Math.min(maxTroops, remainingTroops)));
+        let sumPrev = 0;
+        for (let i = 0; i < sizes.length; i++) {
+            const size = sizes[i];
+            const lineStartLost = sumPrev;
+            const lineEndLost = sumPrev + size; // exclusif
+            if (lost < lineEndLost) {
+                const lostInside = lost - lineStartLost;
+                const currentHp = size - Math.max(0, lostInside);
+                return { currentIndex: i, currentHp, lineSize: size };
+            }
+            sumPrev += size;
+        }
+        // Toutes les lignes sont tombées
+        const lastIdx = Math.max(0, sizes.length - 1);
+        return { currentIndex: lastIdx + 1, currentHp: 0, lineSize: 0 };
     }
 }
