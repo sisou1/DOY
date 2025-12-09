@@ -85,6 +85,8 @@ Moyen de lvl up hors cheat
 
 Créer un Jira ou un truc similaire si qq1 rejoin le projet
 
+Géré les Warnings dans les fichiers pour avoir une base plus code clean
+
 Cookie de session pour rester connecter même après un F5 et moyen de logout
 
 organiser le code mieux que ça surtout coté front, attention a game.service.ts
