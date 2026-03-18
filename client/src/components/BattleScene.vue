@@ -1,7 +1,13 @@
 <script setup>
 import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 
-const props = defineProps({ battleId: Number })
+const props = defineProps({
+  battleId: Number,
+  isDev: {
+    type: Boolean,
+    default: false
+  }
+})
 const emit = defineEmits(['end-battle'])
 
 const ROUND_DURATION_MS = 1500
@@ -174,7 +180,7 @@ const displayedLogs = computed(() => {
     output.push({ log, turn })
   }
 
-  return output
+  return output.slice().reverse()
 })
 
 const formatLog = (log, turn) => {
@@ -293,17 +299,21 @@ const formatLog = (log, turn) => {
         {{ battleData && battleData.status === 'FINISHED' ? 'RETOURNER A LA VILLE' : 'Quitter le combat' }}
       </button>
 
+    </div>
+
+    <div v-if="props.isDev && battleData" class="debug-overlay">
+      <div class="debug-head">
+        Debug combat
+        <span class="debug-meta">round {{ debugInfo.roundIndex }} | {{ debugInfo.phase }} | ATK {{ debugInfo.atkHp }} | DEF {{ debugInfo.defHp }}</span>
+      </div>
       <div class="logs">
-        <div class="debug-line">
-          Debug - round: {{ debugInfo.roundIndex }} | phase: {{ debugInfo.phase }} | ATK {{ debugInfo.atkHp }} / DEF {{ debugInfo.defHp }}
-        </div>
         <div v-for="(entry, i) in displayedLogs" :key="i" class="log-line">
           {{ formatLog(entry.log, entry.turn) }}
         </div>
       </div>
     </div>
 
-    <div v-else>Chargement...</div>
+    <div v-if="!battleData">Chargement...</div>
   </div>
 </template>
 
@@ -418,15 +428,15 @@ const formatLog = (log, turn) => {
 }
 
 .logs {
-  max-height: 35vh;
+  height: 100%;
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.25);
   width: 100%;
-  margin: 0 0 12px 0;
-  padding: 10px;
+  margin: 0;
+  padding: 8px 10px;
   font-family: monospace;
-  font-size: 0.9rem;
-  border: 1px solid #555;
+  font-size: 0.82rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
   box-sizing: border-box;
 }
 
@@ -642,10 +652,39 @@ const formatLog = (log, turn) => {
   background: #555;
 }
 
-.debug-line {
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  color: #bbb;
-  font-size: 0.85rem;
+.debug-overlay {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: min(440px, calc(100vw - 28px));
+  height: clamp(180px, 26vh, 250px);
+  z-index: 30;
+  background: rgba(10, 10, 10, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.debug-head {
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.debug-meta {
+  color: #c8c8c8;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

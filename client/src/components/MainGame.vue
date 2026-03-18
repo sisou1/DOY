@@ -15,6 +15,7 @@ let cityPollingInterval = null
     const topBarRef = ref(null)
     const buildings = ref([])
     const heroes = ref([])
+    const isDev = ref(false)
 
     // ... existing code ...
     const refreshAllData = () => {
@@ -35,6 +36,9 @@ let cityPollingInterval = null
           buildings.value = data.profile.buildings
           if (data.profile.heroes) {
             heroes.value = data.profile.heroes
+          }
+          if (data.profile.user) {
+            isDev.value = !!data.profile.user.isDev
           }
         }
       } catch (e) {
@@ -124,6 +128,7 @@ onUnmounted(() => {
     <BattleScene 
       v-if="currentScene === 'BATTLE'"
       :battleId="activeBattleId"
+      :isDev="isDev"
       @end-battle="backHome"
     />
     
