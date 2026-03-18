@@ -69,11 +69,13 @@ technologies web modernes.
 
 ## 🧩 Fonctionnalités (en cours)
 
-Les batailles :
+Prochain avancement : 
 
-Faut faire le visuel des combat, au moins un peut
+plus d'enemie, test cas limite liste de héros (100 lignes)
 
-récompense pour les victoires
+gestion avancer des héros, équipements et quelques combats
+
+récompense pour les victoires simili progression
 
 TODO :
 
@@ -81,16 +83,18 @@ fer a 0 mine de fer a 0
 
 Moyen de lvl up hors cheat
 
-Créer un Jira ou un truc similaire si qq1 rejoin le projet
+Faut faire le visuel des combat
+
+Organiser le code mieux que ça surtout coté front, attention a game.service.ts
 
 Géré les Warnings dans les fichiers pour avoir une base plus code clean
 
 Cookie de session pour rester connecter même après un F5 et moyen de logout
 
-organiser le code mieux que ça surtout coté front, attention a game.service.ts
-
 Auth mieux que ça c'est une cata
 passer par Auth 0 si possible
+
+Créer un Jira ou un truc similaire si qq1 rejoin le projet
 
 tests unitaires si possible
 
