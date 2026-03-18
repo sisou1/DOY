@@ -527,7 +527,12 @@ export class GameService {
                 heroes: {
                     orderBy: { queueOrder: 'asc' },
                     include: {
-                        profile: { select: { userId: true } }
+                        profile: {
+                            select: {
+                                userId: true,
+                                user: { select: { username: true } }
+                            }
+                        }
                     }
                 }
             }
@@ -668,7 +673,12 @@ export class GameService {
                     heroes: {
                         orderBy: { queueOrder: 'asc' },
                         include: {
-                            profile: { select: { userId: true } }
+                            profile: {
+                                select: {
+                                    userId: true,
+                                    user: { select: { username: true } }
+                                }
+                            }
                         }
                     }
                 }

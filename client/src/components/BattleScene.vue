@@ -16,6 +16,8 @@ const VISIBLE_QUEUE_MAX = 6
 const battleData = ref(null)
 const heroNamesCache = ref({})
 const showVictoryBanner = ref(false)
+const showAtkRoster = ref(false)
+const showDefRoster = ref(false)
 let pollingInterval = null
 
 const fetchBattleState = async () => {
@@ -96,8 +98,60 @@ const queueDefUnits = computed(() => {
 
 const visibleQueueAtk = computed(() => queueAtkUnits.value.slice(0, VISIBLE_QUEUE_MAX))
 const visibleQueueDef = computed(() => queueDefUnits.value.slice(0, VISIBLE_QUEUE_MAX))
-const overflowAtk = computed(() => Math.max(0, queueAtkUnits.value.length - VISIBLE_QUEUE_MAX))
-const overflowDef = computed(() => Math.max(0, queueDefUnits.value.length - VISIBLE_QUEUE_MAX))
+
+const getHeroById = (id) => (battleData.value?.heroes || []).find((h) => String(h.id) === String(id))
+
+const getHeroImageById = (id) => {
+  const hero = getHeroById(id)
+  if (!hero) return '/Heroes/Warrior.png'
+  if (hero.type === 'ARCHER' || hero.type === 'ARCHER_V2') return '/Heroes/Archer.png'
+  if (hero.type === 'GOBLIN') return '/Heroes/Goblin.png'
+  return '/Heroes/Warrior.png'
+}
+
+const activeAttackerInfo = computed(() => {
+  const unit = activeAtkUnit.value
+  if (!unit) return null
+  const hero = getHeroById(unit.heroId)
+  return {
+    ownerName: hero?.profile?.user?.username || 'Inconnu',
+    heroName: unit.heroName,
+    imageUrl: getHeroImageById(unit.heroId)
+  }
+})
+
+const activeDefenderInfo = computed(() => {
+  const unit = activeDefUnit.value
+  if (!unit) return null
+  const hero = getHeroById(unit.heroId)
+  return {
+    ownerName: hero?.profile?.user?.username || 'IA',
+    heroName: unit.heroName,
+    imageUrl: getHeroImageById(unit.heroId)
+  }
+})
+
+const attackerRoster = computed(() => {
+  const heroes = (battleData.value?.heroes || [])
+    .filter((hero) => hero.side === 'ATTACKER')
+    .sort((a, b) => (a.queueOrder ?? 999) - (b.queueOrder ?? 999))
+
+  return heroes.map((hero) => {
+    const owner = hero?.profile?.user?.username || 'Inconnu'
+    return `${owner} (${hero.name})`
+  })
+})
+
+const defenderRoster = computed(() => {
+  const heroes = (battleData.value?.heroes || [])
+    .filter((hero) => hero.side === 'DEFENDER')
+    .sort((a, b) => (a.queueOrder ?? 999) - (b.queueOrder ?? 999))
+
+  return heroes.map((hero) => {
+    const owner = hero?.profile?.user?.username || 'IA'
+    return `${owner} (${hero.name})`
+  })
+})
 
 const victoryStatus = computed(() => {
   if (!battleData.value || battleData.value.status !== 'FINISHED') return null
@@ -226,6 +280,34 @@ const formatLog = (log, turn) => {
 
 <template>
   <div class="battle-scene">
+    <div class="side-head side-head-left">
+      <div class="side-head-title">ATTAQUANT</div>
+      <div v-if="activeAttackerInfo" class="side-head-card">
+        <img :src="activeAttackerInfo.imageUrl" class="side-head-avatar" alt="Attacker" />
+        <div class="side-head-text">
+          <div class="owner-name">{{ activeAttackerInfo.ownerName }} ({{ activeAttackerInfo.heroName }})</div>
+          <button class="roster-link" @click="showAtkRoster = !showAtkRoster">Heros: {{ attackerRoster.length }}</button>
+        </div>
+      </div>
+      <div v-if="showAtkRoster" class="roster-panel">
+        <div v-for="(entry, idx) in attackerRoster" :key="`atk-${idx}`" class="roster-line">{{ entry }}</div>
+      </div>
+    </div>
+
+    <div class="side-head side-head-right">
+      <div class="side-head-title">DEFENSEUR</div>
+      <div v-if="activeDefenderInfo" class="side-head-card mirror">
+        <div class="side-head-text">
+          <div class="owner-name">{{ activeDefenderInfo.ownerName }} ({{ activeDefenderInfo.heroName }})</div>
+          <button class="roster-link" @click="showDefRoster = !showDefRoster">Heros: {{ defenderRoster.length }}</button>
+        </div>
+        <img :src="activeDefenderInfo.imageUrl" class="side-head-avatar" alt="Defender" />
+      </div>
+      <div v-if="showDefRoster" class="roster-panel mirror">
+        <div v-for="(entry, idx) in defenderRoster" :key="`def-${idx}`" class="roster-line">{{ entry }}</div>
+      </div>
+    </div>
+
     <div class="header-zone">
       <div
         v-if="victoryStatus && showVictoryBanner"
@@ -235,10 +317,6 @@ const formatLog = (log, turn) => {
         {{ victoryStatus }}
       </div>
       <h1 v-else>COMBAT EN COURS</h1>
-      <div class="phase-badge" :class="phase">
-        Phase : {{ phase }}
-        <span v-if="phase === 'ENTER'"> (entree des lignes/heros)</span>
-      </div>
     </div>
 
     <div v-if="battleData" class="battle-info">
@@ -250,7 +328,6 @@ const formatLog = (log, turn) => {
                 <div class="badge">L{{ u.lineIndex + 1 }}</div>
                 <div class="q-name">{{ u.heroName }}</div>
               </div>
-              <div v-if="overflowAtk > 0" class="overflow-chip left-chip">+{{ overflowAtk }}</div>
             </div>
 
             <div
@@ -290,7 +367,6 @@ const formatLog = (log, turn) => {
                 <div class="badge">L{{ u.lineIndex + 1 }}</div>
                 <div class="q-name">{{ u.heroName }}</div>
               </div>
-              <div v-if="overflowDef > 0" class="overflow-chip right-chip">+{{ overflowDef }}</div>
             </div>
           </div>
         </div>
@@ -308,8 +384,8 @@ const formatLog = (log, turn) => {
 
     <div v-if="props.isDev && battleData" class="debug-overlay">
       <div class="debug-head">
-        Debug combat
-        <span class="debug-meta">round {{ debugInfo.roundIndex }} | {{ debugInfo.phase }} | ATK {{ debugInfo.atkHp }} | DEF {{ debugInfo.defHp }}</span>
+        Debug
+        <span class="debug-meta">phase: {{ debugInfo.phase }} | round {{ debugInfo.roundIndex }} | ATK {{ debugInfo.atkHp }} | DEF {{ debugInfo.defHp }}</span>
       </div>
       <div class="logs">
         <div v-for="(entry, i) in displayedLogs" :key="i" class="log-line">
@@ -341,6 +417,138 @@ const formatLog = (log, turn) => {
   align-items: center;
   justify-content: center;
   width: 100%;
+}
+
+.side-head {
+  position: absolute;
+  top: 8px;
+  z-index: 24;
+  min-width: 420px;
+  max-width: 520px;
+  background: rgba(12, 12, 12, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+
+.side-head-left { left: 18px; }
+.side-head-right {
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.side-head-title {
+  font-size: 0.92rem;
+  color: #d6d6d6;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+
+.side-head-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.side-head-card.mirror {
+  justify-content: flex-end;
+  flex-direction: row;
+  width: 100%;
+}
+
+.side-head-card.mirror .side-head-text {
+  text-align: right;
+}
+
+.side-head-right .side-head-title {
+  width: 100%;
+  text-align: right;
+}
+
+.side-head-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  border: 1px solid #666;
+  object-fit: cover;
+  background: #111;
+}
+
+.side-head-text {
+  min-width: 0;
+}
+
+.owner-name {
+  color: #fff;
+  font-size: 1.28rem;
+  line-height: 1.15;
+  font-weight: 700;
+}
+
+.roster-link {
+  margin-top: 6px;
+  border: 1px solid #6f6f6f;
+  background: #232323;
+  color: #f2f2f2;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+
+.roster-link:hover {
+  background: #2f2f2f;
+  border-color: #9a9a9a;
+}
+
+.roster-link:active {
+  transform: translateY(1px);
+}
+
+.side-head-right .roster-link {
+  align-self: flex-end;
+  text-align: right;
+}
+
+.roster-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 50%;
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.42);
+  border-radius: 6px;
+  padding: 6px 8px;
+  z-index: 25;
+}
+
+.roster-panel.mirror {
+  left: auto;
+  right: 0;
+  text-align: right;
+}
+
+.roster-line {
+  color: #d7d7d7;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.roster-line:last-child {
+  border-bottom: none;
 }
 
 .victory-banner {
@@ -568,32 +776,6 @@ const formatLog = (log, turn) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.overflow-chip {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
-  border-radius: 18px;
-  background: #f39c12;
-  color: #2a2a2a;
-  font-weight: 900;
-  font-size: 0.8rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid #b9770e;
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
-}
-
-.overflow-chip.left-chip {
-  left: 8px;
-}
-
-.overflow-chip.right-chip {
-  right: 8px;
 }
 
 .unit-card .hp-bar {
