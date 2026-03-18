@@ -151,9 +151,6 @@ onUnmounted(() => {
 }
 
 .global-army-view {
-  position: fixed;
-  top: 80px;
-  left: 20px;
   z-index: 220;
   transition: opacity 0.2s ease, filter 0.2s ease;
 }
