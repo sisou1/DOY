@@ -81,7 +81,12 @@ const activeDefUnit = computed(() => {
 
 const queueAtkUnits = computed(() => {
   const queue = battleData.value?.ui?.attacker?.queue || []
-  return queue.map((unit, i) => ({ id: `${unit.heroId}-${unit.lineIndex}-${i}`, ...unit }))
+  // Cote attaquant (a gauche): on inverse l'ordre d'affichage pour avoir
+  // ... L3 L2 L1(active) vers le centre du combat.
+  return queue
+    .slice()
+    .reverse()
+    .map((unit, i) => ({ id: `${unit.heroId}-${unit.lineIndex}-${i}`, ...unit }))
 })
 
 const queueDefUnits = computed(() => {

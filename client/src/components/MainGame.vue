@@ -97,7 +97,6 @@ onUnmounted(() => {
     <TopBar v-if="currentScene !== 'BATTLE'" ref="topBarRef" :username="username" />
 
     <ArmyView
-      v-if="currentScene !== 'BATTLE'"
       :heroes="heroes"
       @watch-battle="launchBattle"
       :class="['global-army-view', { dimmed: showHeroManagement }]"

@@ -445,8 +445,12 @@ export class GameService {
         const profile = await this.getProfile(userId);
         if (!profile) throw new BadRequestException('Profile not found');
 
-        const myHero = profile.heroes.find(h => h.troops > 0 && !h.battleId);
-        if (!myHero) throw new BadRequestException('No available heroes (dead or busy)');
+        const availableHeroes = profile.heroes
+            .filter(h => h.troops > 0 && !h.battleId)
+            .sort((a, b) => a.id - b.id);
+        if (availableHeroes.length === 0) {
+            throw new BadRequestException('No available heroes (dead or busy)');
+        }
 
         const goblinStats = getHeroBaseStats(HERO_TYPES.GOBLIN);
 
@@ -479,30 +483,33 @@ export class GameService {
                 }
             });
 
-            // Engager mon héros seulement s'il est encore disponible
-            const claim = await tx.hero.updateMany({
-                where: {
-                    id: myHero.id,
-                    battleId: null,
-                    troops: { gt: 0 }
-                },
-                data: {
-                    side: 'ATTACKER',
-                    queueOrder: 0
+            // Engager tous les héros disponibles de l'attaquant (ordre stable)
+            for (let i = 0; i < availableHeroes.length; i++) {
+                const hero = availableHeroes[i];
+                const claim = await tx.hero.updateMany({
+                    where: {
+                        id: hero.id,
+                        battleId: null,
+                        troops: { gt: 0 }
+                    },
+                    data: {
+                        side: 'ATTACKER',
+                        queueOrder: i
+                    }
+                });
+                if (claim.count !== 1) {
+                    throw new BadRequestException('One hero is no longer available');
                 }
-            });
-            if (claim.count !== 1) {
-                throw new BadRequestException('Hero is no longer available');
             }
 
-            // Créer la bataille avec les 3 participants
+            // Créer la bataille avec tous les attaquants + 2 défenseurs PVE
             return tx.battle.create({
                 data: {
                     status: 'IN_PROGRESS',
                     lastUpdate: new Date(),
                     heroes: {
                         connect: [
-                            { id: myHero.id },
+                            ...availableHeroes.map((h) => ({ id: h.id })),
                             { id: goblin1.id },
                             { id: goblin2.id }
                         ]
