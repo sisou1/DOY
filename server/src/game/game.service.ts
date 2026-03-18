@@ -373,7 +373,7 @@ export class GameService {
                 const stats = getHeroBaseStats(type);
                 return {
                     type,
-                    name: type === HERO_TYPES.ARCHER ? 'Archer' : 'Warrior',
+                    name: this.getRecruitHeroName(type),
                     attack: stats.attack,
                     defense: stats.defense,
                     maxTroops: stats.maxTroops,
@@ -413,7 +413,7 @@ export class GameService {
         await this.prisma.hero.create({
             data: {
                 profileId: profile.id,
-                name: type === HERO_TYPES.ARCHER ? 'Archer' : 'Warrior',
+                name: this.getRecruitHeroName(type),
                 type,
                 attack: baseStats.attack,
                 defense: baseStats.defense,
@@ -803,6 +803,14 @@ export class GameService {
         if (attackers.length > 0 && defenders.length === 0) return 'ATTACKER';
         if (defenders.length > 0 && attackers.length === 0) return 'DEFENDER';
         return 'DRAW';
+    }
+
+    private getRecruitHeroName(type: string) {
+        if (type === HERO_TYPES.ARCHER) return 'Archer';
+        if (type === HERO_TYPES.WARRIOR) return 'Warrior';
+        if (type === HERO_TYPES.ARCHER_V2) return 'Archer V2';
+        if (type === HERO_TYPES.WARRIOR_V2) return 'Warrior V2';
+        return type;
     }
 
     private getBattleResult(battle: any): { winnerSide: 'ATTACKER' | 'DEFENDER' | 'DRAW' } | null {

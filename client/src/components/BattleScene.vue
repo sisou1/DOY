@@ -596,28 +596,6 @@ const formatLog = (log, turn) => {
   right: 8px;
 }
 
-.queue.left::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 40px;
-  background: linear-gradient(90deg, rgba(44, 4, 4, 1) 0%, rgba(44, 4, 4, 0) 100%);
-  pointer-events: none;
-}
-
-.queue.right::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 40px;
-  background: linear-gradient(270deg, rgba(44, 4, 4, 1) 0%, rgba(44, 4, 4, 0) 100%);
-  pointer-events: none;
-}
-
 .unit-card .hp-bar {
   margin-top: 6px;
 }

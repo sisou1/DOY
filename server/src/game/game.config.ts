@@ -76,13 +76,17 @@ export const LEVEL_REWARDS: Record<number, { type: string }[]> = {
 export const HERO_TYPES = {
   WARRIOR: 'WARRIOR',
   ARCHER: 'ARCHER',
+  WARRIOR_V2: 'WARRIOR_V2',
+  ARCHER_V2: 'ARCHER_V2',
   GOBLIN: 'GOBLIN',
 };
 
-export const PLAYER_HERO_LIMIT = 2;
+export const PLAYER_HERO_LIMIT = 4;
 export const PLAYER_RECRUITABLE_HERO_TYPES = [
   HERO_TYPES.WARRIOR,
   HERO_TYPES.ARCHER,
+  HERO_TYPES.WARRIOR_V2,
+  HERO_TYPES.ARCHER_V2,
 ];
 
 export const HERO_STATS = {
@@ -96,6 +100,18 @@ export const HERO_STATS = {
     attack: 15,
     defense: 5,
     maxTroops: 80,
+    imageUrl: '/Heroes/Archer.png'
+  },
+  [HERO_TYPES.WARRIOR_V2]: {
+    attack: 20,
+    defense: 20,
+    maxTroops: 200,
+    imageUrl: '/Heroes/Warrior.png'
+  },
+  [HERO_TYPES.ARCHER_V2]: {
+    attack: 30,
+    defense: 10,
+    maxTroops: 160,
     imageUrl: '/Heroes/Archer.png'
   },
   // Un monstre faible pour tester
