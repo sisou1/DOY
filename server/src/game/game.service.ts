@@ -426,22 +426,18 @@ export class GameService {
         if (!battle) throw new BadRequestException('Battle not found');
 
         if (battle.status === 'IN_PROGRESS') {
-            await this.processBattleRounds(battle);
-
-            // On recharge la version à jour
-            battle = await this.prisma.battle.findUnique({
-                where: { id: battleId },
-                include: { heroes: { orderBy: { queueOrder: 'asc' } } }
-            });
+            battle = await this.processBattleRounds(battle);
         }
 
         // ---- UI v2: ajouter un snapshot déterministe pour le front ----
         const ui = this.buildUiSnapshot(battle);
+        const result = this.getBattleResult(battle);
         // On retourne un objet plain avec des méta supplémentaires
         return {
             ...battle,
             version: 2,
             serverTime: Date.now(),
+            result,
             ui
         } as any;
     }
@@ -451,48 +447,26 @@ export class GameService {
         const lastUpdate = new Date(battle.lastUpdate).getTime();
 
         const timeDiff = now - lastUpdate;
-
         const roundsToPlay = Math.floor(timeDiff / ROUND_DURATION);
-
-        if (roundsToPlay <= 0) return;
+        if (roundsToPlay <= 0) return battle;
 
         let newLogs = [...(battle.logs as any[])];
-        let isBattleFinished = false;
 
-        // IMPORTANT : On trie par queueOrder pour être sûr que le [0] est bien le premier de la file
+        // Files d’attente mutables (références aux héros du battle initial)
         const attackers = battle.heroes
             .filter((h: any) => h.side === 'ATTACKER' && h.troops > 0)
             .sort((a: any, b: any) => a.queueOrder - b.queueOrder);
-            
         const defenders = battle.heroes
             .filter((h: any) => h.side === 'DEFENDER' && h.troops > 0)
             .sort((a: any, b: any) => a.queueOrder - b.queueOrder);
 
-        // Pour une meilleure lisibilité côté front: on ne joue qu'UN seul round par requête.
-        // Si du retard s'est accumulé, il sera rattrapé round par round aux requêtes suivantes.
-        const roundsToActuallyPlay = Math.min(roundsToPlay, 1);
+        let roundsPlayed = 0;
 
-        for (let i = 0; i < roundsToActuallyPlay; i++) {
+        for (let i = 0; i < roundsToPlay; i++) {
             const roundTime = lastUpdate + ((i + 1) * ROUND_DURATION);
 
-            // Si l'un des camps est vide, la bataille est terminée.
             if (attackers.length === 0 || defenders.length === 0) {
-                isBattleFinished = true;
                 break;
-            }
-
-            // 1) Gérer les entrées différées planifiées via logs (round d'animation sans dégâts)
-            const scheduledEnters = (newLogs as any[]).filter(l => l && l.type === 'SCHEDULE_ENTER' && l.at === roundTime);
-            if (scheduledEnters.length > 0) {
-                for (const ev of scheduledEnters) {
-                    if (ev.enterType === 'LINE_ENTER') {
-                        newLogs.push({ type: 'LINE_ENTER', heroId: ev.heroId, lineIndex: ev.lineIndex, at: roundTime });
-                    } else if (ev.enterType === 'HERO_ENTER') {
-                        newLogs.push({ type: 'HERO_ENTER', heroId: ev.heroId, at: roundTime });
-                    }
-                }
-                // Round réservé aux entrées: pas de dégâts ce tour
-                continue;
             }
 
             const activeAttacker = attackers[0];
@@ -501,7 +475,6 @@ export class GameService {
             const dmgToDefender = Math.max(1, Math.floor(activeAttacker.attack - (activeDefender.defense * 0.2)));
             const dmgToAttacker = Math.max(1, Math.floor(activeDefender.attack - (activeAttacker.defense * 0.2)));
 
-            // Dégâts limités à la ligne courante
             const defLine = this.getCurrentLineState(activeDefender.maxTroops, activeDefender.troops);
             const atkLine = this.getCurrentLineState(activeAttacker.maxTroops, activeAttacker.troops);
 
@@ -519,31 +492,27 @@ export class GameService {
                 ]
             });
 
-            // Détection des lignes tombées ce round
             const defLineAfter = this.getCurrentLineState(activeDefender.maxTroops, activeDefender.troops);
             if (defLine.currentHp > 0 && defLineAfter.currentIndex > defLine.currentIndex) {
                 newLogs.push({ type: 'LINE_DOWN', heroId: activeDefender.id, lineIndex: defLine.currentIndex, at: roundTime });
-                // Planifier l'entrée de la prochaine ligne (si encore vivant) au round suivant
                 if (activeDefender.troops > 0) {
-                    newLogs.push({ type: 'SCHEDULE_ENTER', enterType: 'LINE_ENTER', heroId: activeDefender.id, lineIndex: defLineAfter.currentIndex, at: roundTime + ROUND_DURATION });
+                    newLogs.push({ type: 'LINE_ENTER', heroId: activeDefender.id, lineIndex: defLineAfter.currentIndex, at: roundTime });
                 }
             }
             const atkLineAfter = this.getCurrentLineState(activeAttacker.maxTroops, activeAttacker.troops);
             if (atkLine.currentHp > 0 && atkLineAfter.currentIndex > atkLine.currentIndex) {
                 newLogs.push({ type: 'LINE_DOWN', heroId: activeAttacker.id, lineIndex: atkLine.currentIndex, at: roundTime });
                 if (activeAttacker.troops > 0) {
-                    newLogs.push({ type: 'SCHEDULE_ENTER', enterType: 'LINE_ENTER', heroId: activeAttacker.id, lineIndex: atkLineAfter.currentIndex, at: roundTime + ROUND_DURATION });
+                    newLogs.push({ type: 'LINE_ENTER', heroId: activeAttacker.id, lineIndex: atkLineAfter.currentIndex, at: roundTime });
                 }
             }
 
-            // Détections de morts et file d'attente de l'entrée du prochain héros
             if (activeDefender.troops <= 0) {
                 activeDefender.troops = 0;
                 defenders.shift();
                 newLogs.push({ type: 'DEATH', heroId: activeDefender.id, at: roundTime });
                 if (defenders.length > 0) {
-                    // Le prochain héros du côté défenseur entre au round suivant
-                    newLogs.push({ type: 'SCHEDULE_ENTER', enterType: 'HERO_ENTER', heroId: defenders[0].id, at: roundTime + ROUND_DURATION });
+                    newLogs.push({ type: 'HERO_ENTER', heroId: defenders[0].id, at: roundTime });
                 }
             }
             if (activeAttacker.troops <= 0) {
@@ -551,42 +520,49 @@ export class GameService {
                 attackers.shift();
                 newLogs.push({ type: 'DEATH', heroId: activeAttacker.id, at: roundTime });
                 if (attackers.length > 0) {
-                    newLogs.push({ type: 'SCHEDULE_ENTER', enterType: 'HERO_ENTER', heroId: attackers[0].id, at: roundTime + ROUND_DURATION });
+                    newLogs.push({ type: 'HERO_ENTER', heroId: attackers[0].id, at: roundTime });
                 }
             }
+
+            roundsPlayed++;
         }
 
         const finalStatus = (attackers.length === 0 || defenders.length === 0) ? 'FINISHED' : 'IN_PROGRESS';
+        const finalUpdateMs = lastUpdate + (roundsPlayed * ROUND_DURATION);
 
+        if (finalStatus === 'FINISHED') {
+            const winnerSide = this.getWinnerSide(attackers, defenders);
+            const alreadyLogged = newLogs.some((l: any) => l?.type === 'BATTLE_END');
+            if (!alreadyLogged) {
+                newLogs.push({ type: 'BATTLE_END', winnerSide, at: finalUpdateMs });
+            }
+        }
+
+        // Avancer lastUpdate du nombre réel de rounds joués
         await this.prisma.battle.update({
             where: { id: battle.id },
             data: {
                 status: finalStatus,
-                lastUpdate: new Date(lastUpdate + (Math.min(roundsToPlay, 1) * ROUND_DURATION)),
+                lastUpdate: new Date(finalUpdateMs),
                 logs: newLogs
             }
         });
 
-        // --- Libération des morts (NE PAS libérer tous les vivants au moment de FINISHED
-        //     pour permettre au front d'avoir un snapshot final cohérent) ---
-        for (const hero of battle.heroes) {
+        // Persister les troupes et relâcher si mort ou bataille finie
+        await Promise.all(battle.heroes.map((hero: any) => {
             const updateData: any = { troops: hero.troops };
-
-            // Si le héros est mort, on le libère immédiatement
-            if (hero.troops <= 0) {
+            if (hero.troops <= 0 || finalStatus === 'FINISHED') {
                 updateData.battleId = null;
                 updateData.side = null;
                 updateData.queueOrder = null;
             }
+            return this.prisma.hero.update({ where: { id: hero.id }, data: updateData });
+        }));
 
-            await this.prisma.hero.update({
-                where: { id: hero.id },
-                data: updateData
-            });
-        }
-
-        // Optionnel: on pourrait planifier un nettoyage ultérieur des héros vivants
-        // après que le client ait accusé réception de la FIN (non nécessaire pour l'instant).
+        battle.status = finalStatus;
+        battle.lastUpdate = new Date(finalUpdateMs);
+        battle.logs = newLogs;
+        return battle;
     }
 
     // ---- Helpers UI v2 ----
@@ -601,10 +577,17 @@ export class GameService {
 
     private getSegments(maxTroops: number, troops: number) {
         const sizes = this.getLineSizes(maxTroops || 0);
-        let remaining = Math.max(0, troops || 0);
+        const clampedMax = Math.max(0, maxTroops || 0);
+        const clampedTroops = Math.max(0, Math.min(clampedMax, troops || 0));
+        // Les pertes s'appliquent du front vers l'arriere (ligne 1 puis 2 puis 3).
+        // On derive donc chaque ligne a partir du total perdu, pas du "remplissage" restant.
+        const lost = clampedMax - clampedTroops;
+        let lostSoFar = 0;
+
         return sizes.map((size, idx) => {
-            const hp = Math.max(0, Math.min(size, remaining));
-            remaining -= hp;
+            const lostInsideLine = Math.max(0, Math.min(size, lost - lostSoFar));
+            const hp = Math.max(0, size - lostInsideLine);
+            lostSoFar += size;
             return { idx, hp, max: size };
         });
     }
@@ -686,6 +669,32 @@ export class GameService {
             attacker: atk,
             defender: def
         };
+    }
+
+    private getWinnerSide(attackers: any[], defenders: any[]): 'ATTACKER' | 'DEFENDER' | 'DRAW' {
+        if (attackers.length > 0 && defenders.length === 0) return 'ATTACKER';
+        if (defenders.length > 0 && attackers.length === 0) return 'DEFENDER';
+        return 'DRAW';
+    }
+
+    private getBattleResult(battle: any): { winnerSide: 'ATTACKER' | 'DEFENDER' | 'DRAW' } | null {
+        if (!battle || battle.status !== 'FINISHED') return null;
+
+        const logs = Array.isArray(battle.logs) ? battle.logs : [];
+        for (let i = logs.length - 1; i >= 0; i--) {
+            const event = logs[i];
+            if (event?.type !== 'BATTLE_END') continue;
+            if (event.winnerSide === 'ATTACKER' || event.winnerSide === 'DEFENDER' || event.winnerSide === 'DRAW') {
+                return { winnerSide: event.winnerSide };
+            }
+        }
+
+        const heroes = Array.isArray(battle.heroes) ? battle.heroes : [];
+        const attackersAlive = heroes.some((h: any) => h?.side === 'ATTACKER' && (h?.troops ?? 0) > 0);
+        const defendersAlive = heroes.some((h: any) => h?.side === 'DEFENDER' && (h?.troops ?? 0) > 0);
+        if (attackersAlive && !defendersAlive) return { winnerSide: 'ATTACKER' };
+        if (defendersAlive && !attackersAlive) return { winnerSide: 'DEFENDER' };
+        return { winnerSide: 'DRAW' };
     }
 
     private getCurrentLineState(maxTroops: number, remainingTroops: number) {
