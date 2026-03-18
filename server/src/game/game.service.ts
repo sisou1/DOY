@@ -8,6 +8,8 @@ import {
     HERO_TYPES,
     getHeroBaseStats,
     HERO_STATS,
+    PLAYER_HERO_LIMIT,
+    PLAYER_RECRUITABLE_HERO_TYPES,
     ROUND_DURATION,
     LINES_PER_HERO
 } from './game.config';
@@ -352,6 +354,92 @@ export class GameService {
     }
 
     // --- SYSTÈME DE BATAILLE ---
+
+    async getHeroRecruitment(userId: number) {
+        const profile = await this.prisma.playerProfile.findUnique({
+            where: { userId },
+            include: { heroes: true }
+        });
+        if (!profile) throw new BadRequestException('Profile not found');
+
+        const ownedHeroes = profile.heroes.map((hero: any) => ({
+            ...hero,
+            imageUrl: HERO_STATS[hero.type]?.imageUrl || '/Heroes/Warrior.png'
+        }));
+        const ownedTypes = new Set(ownedHeroes.map((h: any) => h.type));
+        const recruitableHeroes = PLAYER_RECRUITABLE_HERO_TYPES
+            .filter((type) => !ownedTypes.has(type))
+            .map((type) => {
+                const stats = getHeroBaseStats(type);
+                return {
+                    type,
+                    name: type === HERO_TYPES.ARCHER ? 'Archer' : 'Warrior',
+                    attack: stats.attack,
+                    defense: stats.defense,
+                    maxTroops: stats.maxTroops,
+                    imageUrl: HERO_STATS[type]?.imageUrl || '/Heroes/Warrior.png'
+                };
+            });
+
+        return {
+            maxHeroes: PLAYER_HERO_LIMIT,
+            ownedCount: ownedHeroes.length,
+            ownedHeroes,
+            recruitableHeroes
+        };
+    }
+
+    async recruitHero(userId: number, type: string) {
+        if (!PLAYER_RECRUITABLE_HERO_TYPES.includes(type)) {
+            throw new BadRequestException('Hero type cannot be recruited');
+        }
+
+        const profile = await this.prisma.playerProfile.findUnique({
+            where: { userId },
+            include: { heroes: true }
+        });
+        if (!profile) throw new BadRequestException('Profile not found');
+
+        if (profile.heroes.length >= PLAYER_HERO_LIMIT) {
+            throw new BadRequestException(`Hero limit reached (${PLAYER_HERO_LIMIT})`);
+        }
+
+        const alreadyOwned = profile.heroes.some((hero: any) => hero.type === type);
+        if (alreadyOwned) {
+            throw new BadRequestException('Hero type already owned');
+        }
+
+        const baseStats = getHeroBaseStats(type);
+        await this.prisma.hero.create({
+            data: {
+                profileId: profile.id,
+                name: type === HERO_TYPES.ARCHER ? 'Archer' : 'Warrior',
+                type,
+                attack: baseStats.attack,
+                defense: baseStats.defense,
+                troops: baseStats.maxTroops,
+                maxTroops: baseStats.maxTroops
+            }
+        });
+
+        return this.getHeroRecruitment(userId);
+    }
+
+    async dismissHero(userId: number, heroId: number) {
+        const profile = await this.prisma.playerProfile.findUnique({ where: { userId } });
+        if (!profile) throw new BadRequestException('Profile not found');
+
+        const hero = await this.prisma.hero.findUnique({ where: { id: heroId } });
+        if (!hero || hero.profileId !== profile.id) {
+            throw new UnauthorizedException('Hero access denied');
+        }
+        if (hero.battleId) {
+            throw new BadRequestException('Cannot dismiss hero while in battle');
+        }
+
+        await this.prisma.hero.delete({ where: { id: heroId } });
+        return this.getHeroRecruitment(userId);
+    }
 
     async startPvEBattle(userId: number) {
         const profile = await this.getProfile(userId);

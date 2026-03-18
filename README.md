@@ -71,8 +71,6 @@ technologies web modernes.
 
 Les batailles :
 
-Faut lui dire de mettre l'attaquand d'un coté et l'autre de l'autre
-
 Faut faire le visuel des combat, au moins un peut
 
 récompense pour les victoires

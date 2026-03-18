@@ -79,6 +79,12 @@ export const HERO_TYPES = {
   GOBLIN: 'GOBLIN',
 };
 
+export const PLAYER_HERO_LIMIT = 2;
+export const PLAYER_RECRUITABLE_HERO_TYPES = [
+  HERO_TYPES.WARRIOR,
+  HERO_TYPES.ARCHER,
+];
+
 export const HERO_STATS = {
   [HERO_TYPES.WARRIOR]: {
     attack: 10,

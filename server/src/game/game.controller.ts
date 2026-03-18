@@ -1,5 +1,5 @@
 import { 
-    Controller, Get, Post, Body, Req,
+    Controller, Get, Post, Delete, Body, Req,
     UnauthorizedException, Query, BadRequestException, Param // <-- AJOUTER CES IMPORTS
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -111,5 +111,41 @@ export class GameController {
 
     const battle = await this.gameService.getBattle(userId, battleId);
     return { success: true, battle };
+  }
+
+  @Get('heroes/recruitment')
+  async getHeroRecruitment(@Req() req: Request) {
+    const sessionId = req.cookies?.sessionId;
+    if (!sessionId) throw new UnauthorizedException('No session');
+    const userId = this.authService.getUserIdFromSession(sessionId);
+    if (!userId) throw new UnauthorizedException('Invalid session');
+
+    const recruitment = await this.gameService.getHeroRecruitment(userId);
+    return { success: true, recruitment };
+  }
+
+  @Post('heroes/recruit')
+  async recruitHero(@Req() req: Request, @Body('type') type: string) {
+    const sessionId = req.cookies?.sessionId;
+    if (!sessionId) throw new UnauthorizedException('No session');
+    const userId = this.authService.getUserIdFromSession(sessionId);
+    if (!userId) throw new UnauthorizedException('Invalid session');
+
+    const recruitment = await this.gameService.recruitHero(userId, type);
+    return { success: true, recruitment };
+  }
+
+  @Delete('heroes/:id')
+  async dismissHero(@Req() req: Request, @Param('id') id: string) {
+    const sessionId = req.cookies?.sessionId;
+    if (!sessionId) throw new UnauthorizedException('No session');
+    const userId = this.authService.getUserIdFromSession(sessionId);
+    if (!userId) throw new UnauthorizedException('Invalid session');
+
+    const heroId = parseInt(id, 10);
+    if (isNaN(heroId)) throw new BadRequestException('Invalid hero ID');
+
+    const recruitment = await this.gameService.dismissHero(userId, heroId);
+    return { success: true, recruitment };
   }
 }
