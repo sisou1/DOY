@@ -21,7 +21,7 @@ const emit = defineEmits(['watch-battle'])
           <img :src="hero.imageUrl" class="hero-avatar" alt="Hero icon" />
           <div class="hero-info">
             <div class="name-row">
-              <span class="hero-name">{{ hero.name }}</span>
+              <span class="hero-name" :style="{ color: hero.rarityColor || '#fff' }">{{ hero.name }}</span>
               <span class="hero-lvl">Niv. {{ hero.level }}</span>
             </div>
 

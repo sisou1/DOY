@@ -4,19 +4,35 @@ import {
     BUILDING_TYPES,
     getBuildingStats,
     getXpForNextLevel,
+    getHeroXpForNextLevel,
     LEVEL_REWARDS,
     HERO_TYPES,
     getHeroBaseStats,
-    HERO_STATS,
+    getHeroScaledStats,
     PLAYER_HERO_LIMIT,
     PLAYER_RECRUITABLE_HERO_TYPES,
     ROUND_DURATION,
-    LINES_PER_HERO
+    LINES_PER_HERO,
+    PVE_ENEMY_ARCHETYPES,
+    getPvEBattlePreset,
+    getPvEPresetsCatalog
 } from './game.config';
 
 @Injectable()
 export class GameService {
     constructor(private prisma: PrismaService) {}
+
+    private enrichHero<T extends { type: string; level?: number }>(hero: T) {
+        const level = hero.level ?? 1;
+        const scaled = getHeroScaledStats(hero.type, level);
+        return {
+            ...hero,
+            imageUrl: scaled.imageUrl,
+            rarity: scaled.rarity,
+            rarityLabel: scaled.rarityLabel,
+            rarityColor: scaled.rarityColor
+        };
+    }
 
     // Simple proxy vers la config
     getNextLevelStats(type: string, level: number) {
@@ -208,13 +224,7 @@ export class GameService {
             },
         });
 
-        const formattedHeroes = updatedProfile.heroes.map(hero => {
-            const stats = HERO_STATS[hero.type];
-            return {
-                ...hero,
-                imageUrl: stats ? stats.imageUrl : '/Heroes/Warrior.png'
-            };
-        });
+        const formattedHeroes = updatedProfile.heroes.map((hero) => this.enrichHero(hero));
 
         return {
             ...updatedProfile,
@@ -355,6 +365,10 @@ export class GameService {
 
     // --- SYSTÈME DE BATAILLE ---
 
+    getPvEPresets() {
+        return getPvEPresetsCatalog();
+    }
+
     async getHeroRecruitment(userId: number) {
         const profile = await this.prisma.playerProfile.findUnique({
             where: { userId },
@@ -362,10 +376,7 @@ export class GameService {
         });
         if (!profile) throw new BadRequestException('Profile not found');
 
-        const ownedHeroes = profile.heroes.map((hero: any) => ({
-            ...hero,
-            imageUrl: HERO_STATS[hero.type]?.imageUrl || '/Heroes/Warrior.png'
-        }));
+        const ownedHeroes = profile.heroes.map((hero: any) => this.enrichHero(hero));
         const ownedTypes = new Set(ownedHeroes.map((h: any) => h.type));
         const recruitableHeroes = PLAYER_RECRUITABLE_HERO_TYPES
             .filter((type) => !ownedTypes.has(type))
@@ -377,7 +388,10 @@ export class GameService {
                     attack: stats.attack,
                     defense: stats.defense,
                     maxTroops: stats.maxTroops,
-                    imageUrl: HERO_STATS[type]?.imageUrl || '/Heroes/Warrior.png'
+                    imageUrl: stats.imageUrl,
+                    rarity: stats.rarity,
+                    rarityLabel: stats.rarityLabel,
+                    rarityColor: stats.rarityColor
                 };
             });
 
@@ -441,7 +455,7 @@ export class GameService {
         return this.getHeroRecruitment(userId);
     }
 
-    async startPvEBattle(userId: number) {
+    async startPvEBattle(userId: number, presetId: string = 'goblin_patrol') {
         const profile = await this.getProfile(userId);
         if (!profile) throw new BadRequestException('Profile not found');
 
@@ -452,38 +466,42 @@ export class GameService {
             throw new BadRequestException('No available heroes (dead or busy)');
         }
 
-        const goblinStats = getHeroBaseStats(HERO_TYPES.GOBLIN);
+        const preset = getPvEBattlePreset(presetId);
+        if (!preset) {
+            throw new BadRequestException('Unknown PvE preset');
+        }
 
         return this.prisma.$transaction(async (tx) => {
-            // Gobelin 1
-            const goblin1 = await tx.hero.create({
-                data: {
-                    name: 'Goblin Scout',
-                    type: HERO_TYPES.GOBLIN,
-                    attack: goblinStats.attack,
-                    defense: goblinStats.defense,
-                    troops: goblinStats.maxTroops,
-                    maxTroops: goblinStats.maxTroops,
-                    side: 'DEFENDER',
-                    queueOrder: 0 // Actif immédiatement
-                }
-            });
+            const defenders: { id: number }[] = [];
+            for (const enemy of preset.enemies) {
+                const arch = Object.values(PVE_ENEMY_ARCHETYPES).find((a) => a.id === enemy.archetypeId);
+                if (!arch) continue;
 
-            // Gobelin 2
-            const goblin2 = await tx.hero.create({
-                data: {
-                    name: 'Goblin Warrior', // Un nom légèrement différent
-                    type: HERO_TYPES.GOBLIN,
-                    attack: goblinStats.attack + 2, // Un peu plus fort
-                    defense: goblinStats.defense,
-                    troops: goblinStats.maxTroops,
-                    maxTroops: goblinStats.maxTroops,
-                    side: 'DEFENDER',
-                    queueOrder: 1 // Arrive après la mort du premier
-                }
-            });
+                const level = enemy.level ?? 1;
+                const scaled = getHeroScaledStats(arch.type, level);
+                const maxTroops = enemy.troops ?? scaled.maxTroops;
 
-            // Engager tous les héros disponibles de l'attaquant (ordre stable)
+                const createdEnemy = await tx.hero.create({
+                    data: {
+                        name: arch.name,
+                        type: arch.type,
+                        level,
+                        attack: scaled.attack + (enemy.attackBonus ?? 0),
+                        defense: scaled.defense + (enemy.defenseBonus ?? 0),
+                        troops: maxTroops,
+                        maxTroops,
+                        side: 'DEFENDER',
+                        queueOrder: enemy.queueOrder ?? defenders.length
+                    }
+                });
+                defenders.push({ id: createdEnemy.id });
+            }
+
+            if (defenders.length === 0) {
+                throw new BadRequestException('Preset has no valid enemies');
+            }
+
+            // Engage all available attacker heroes in stable order.
             for (let i = 0; i < availableHeroes.length; i++) {
                 const hero = availableHeroes[i];
                 const claim = await tx.hero.updateMany({
@@ -502,7 +520,6 @@ export class GameService {
                 }
             }
 
-            // Créer la bataille avec tous les attaquants + 2 défenseurs PVE
             return tx.battle.create({
                 data: {
                     status: 'IN_PROGRESS',
@@ -510,8 +527,7 @@ export class GameService {
                     heroes: {
                         connect: [
                             ...availableHeroes.map((h) => ({ id: h.id })),
-                            { id: goblin1.id },
-                            { id: goblin2.id }
+                            ...defenders
                         ]
                     }
                 },
@@ -545,13 +561,16 @@ export class GameService {
         if (battle.status === 'IN_PROGRESS') {
             battle = await this.processBattleRounds(battle);
         }
+        if (!battle) throw new BadRequestException('Battle not found');
 
         // ---- UI v2: ajouter un snapshot déterministe pour le front ----
         const ui = this.buildUiSnapshot(battle);
         const result = this.getBattleResult(battle);
-        // On retourne un objet plain avec des méta supplémentaires
+        const heroes = (battle.heroes || []).map((hero: any) => this.enrichHero(hero));
+        // On retourne un objet plain avec des meta supplementaires
         return {
             ...battle,
+            heroes,
             version: 2,
             serverTime: Date.now(),
             result,
@@ -646,9 +665,10 @@ export class GameService {
 
         const finalStatus = (attackers.length === 0 || defenders.length === 0) ? 'FINISHED' : 'IN_PROGRESS';
         const finalUpdateMs = lastUpdate + (roundsPlayed * ROUND_DURATION);
+        let winnerSide: 'ATTACKER' | 'DEFENDER' | 'DRAW' | null = null;
 
         if (finalStatus === 'FINISHED') {
-            const winnerSide = this.getWinnerSide(attackers, defenders);
+            winnerSide = this.getWinnerSide(attackers, defenders);
             const alreadyLogged = newLogs.some((l: any) => l?.type === 'BATTLE_END');
             if (!alreadyLogged) {
                 newLogs.push({ type: 'BATTLE_END', winnerSide, at: finalUpdateMs });
@@ -697,10 +717,67 @@ export class GameService {
             return this.prisma.hero.update({ where: { id: hero.id }, data: updateData });
         }));
 
+        if (finalStatus === 'FINISHED' && winnerSide) {
+            await this.applyBattleHeroExperience(battle.heroes, winnerSide);
+        }
+
         battle.status = finalStatus;
         battle.lastUpdate = new Date(finalUpdateMs);
         battle.logs = newLogs;
         return battle;
+    }
+
+    private async applyBattleHeroExperience(
+        heroes: any[],
+        winnerSide: 'ATTACKER' | 'DEFENDER' | 'DRAW'
+    ) {
+        const updates: Promise<any>[] = [];
+
+        for (const hero of heroes) {
+            if (!hero?.profileId) continue;
+
+            const isWinner = winnerSide !== 'DRAW' && hero.side === winnerSide;
+            const aliveBonus = hero.troops > 0 ? 30 : 0;
+            const winnerBonus = isWinner ? 50 : 0;
+            const baseXp = 25;
+            const xpGain = baseXp + aliveBonus + winnerBonus;
+
+            updates.push(this.grantHeroExperience(hero, xpGain));
+        }
+
+        await Promise.all(updates);
+    }
+
+    private async grantHeroExperience(hero: any, amount: number) {
+        if (!hero || !hero.profileId || amount <= 0) return;
+
+        let newExperience = (hero.experience ?? 0) + amount;
+        let newLevel = hero.level ?? 1;
+        let xpNeeded = getHeroXpForNextLevel(newLevel);
+
+        while (newExperience >= xpNeeded) {
+            newExperience -= xpNeeded;
+            newLevel += 1;
+            xpNeeded = getHeroXpForNextLevel(newLevel);
+        }
+
+        const scaled = getHeroScaledStats(hero.type, newLevel);
+        const oldMaxTroops = Math.max(1, hero.maxTroops || scaled.maxTroops);
+        const oldTroops = Math.max(0, hero.troops || 0);
+        const troopsRatio = oldTroops / oldMaxTroops;
+        const newTroops = oldTroops <= 0 ? 0 : Math.max(1, Math.floor(scaled.maxTroops * troopsRatio));
+
+        await this.prisma.hero.update({
+            where: { id: hero.id },
+            data: {
+                level: newLevel,
+                experience: newExperience,
+                attack: scaled.attack,
+                defense: scaled.defense,
+                maxTroops: scaled.maxTroops,
+                troops: newTroops
+            }
+        });
     }
 
     // ---- Helpers UI v2 ----

@@ -104,9 +104,7 @@ const getHeroById = (id) => (battleData.value?.heroes || []).find((h) => String(
 const getHeroImageById = (id) => {
   const hero = getHeroById(id)
   if (!hero) return '/Heroes/Warrior.png'
-  if (hero.type === 'ARCHER' || hero.type === 'ARCHER_V2') return '/Heroes/Archer.png'
-  if (hero.type === 'GOBLIN') return '/Heroes/Goblin.png'
-  return '/Heroes/Warrior.png'
+  return hero.imageUrl || '/Heroes/Warrior.png'
 }
 
 const activeAttackerInfo = computed(() => {
@@ -116,7 +114,8 @@ const activeAttackerInfo = computed(() => {
   return {
     ownerName: hero?.profile?.user?.username || 'Inconnu',
     heroName: unit.heroName,
-    imageUrl: getHeroImageById(unit.heroId)
+    imageUrl: getHeroImageById(unit.heroId),
+    rarityColor: hero?.rarityColor || '#fff'
   }
 })
 
@@ -127,7 +126,8 @@ const activeDefenderInfo = computed(() => {
   return {
     ownerName: hero?.profile?.user?.username || 'IA',
     heroName: unit.heroName,
-    imageUrl: getHeroImageById(unit.heroId)
+    imageUrl: getHeroImageById(unit.heroId),
+    rarityColor: hero?.rarityColor || '#fff'
   }
 })
 
@@ -136,10 +136,11 @@ const attackerRoster = computed(() => {
     .filter((hero) => hero.side === 'ATTACKER')
     .sort((a, b) => (a.queueOrder ?? 999) - (b.queueOrder ?? 999))
 
-  return heroes.map((hero) => {
-    const owner = hero?.profile?.user?.username || 'Inconnu'
-    return `${owner} (${hero.name})`
-  })
+  return heroes.map((hero) => ({
+    owner: hero?.profile?.user?.username || 'Inconnu',
+    heroName: hero.name,
+    rarityColor: hero?.rarityColor || '#fff'
+  }))
 })
 
 const defenderRoster = computed(() => {
@@ -147,10 +148,11 @@ const defenderRoster = computed(() => {
     .filter((hero) => hero.side === 'DEFENDER')
     .sort((a, b) => (a.queueOrder ?? 999) - (b.queueOrder ?? 999))
 
-  return heroes.map((hero) => {
-    const owner = hero?.profile?.user?.username || 'IA'
-    return `${owner} (${hero.name})`
-  })
+  return heroes.map((hero) => ({
+    owner: hero?.profile?.user?.username || 'IA',
+    heroName: hero.name,
+    rarityColor: hero?.rarityColor || '#fff'
+  }))
 })
 
 const victoryStatus = computed(() => {
@@ -285,12 +287,20 @@ const formatLog = (log, turn) => {
       <div v-if="activeAttackerInfo" class="side-head-card">
         <img :src="activeAttackerInfo.imageUrl" class="side-head-avatar" alt="Attacker" />
         <div class="side-head-text">
-          <div class="owner-name">{{ activeAttackerInfo.ownerName }} ({{ activeAttackerInfo.heroName }})</div>
+          <div class="owner-name">
+            {{ activeAttackerInfo.ownerName }} (
+            <span :style="{ color: activeAttackerInfo.rarityColor || '#fff' }">{{ activeAttackerInfo.heroName }}</span>
+            )
+          </div>
           <button class="roster-link" @click="showAtkRoster = !showAtkRoster">Heros: {{ attackerRoster.length }}</button>
         </div>
       </div>
       <div v-if="showAtkRoster" class="roster-panel">
-        <div v-for="(entry, idx) in attackerRoster" :key="`atk-${idx}`" class="roster-line">{{ entry }}</div>
+        <div v-for="(entry, idx) in attackerRoster" :key="`atk-${idx}`" class="roster-line">
+          {{ entry.owner }} (
+          <span :style="{ color: entry.rarityColor || '#fff' }">{{ entry.heroName }}</span>
+          )
+        </div>
       </div>
     </div>
 
@@ -298,13 +308,21 @@ const formatLog = (log, turn) => {
       <div class="side-head-title">DEFENSEUR</div>
       <div v-if="activeDefenderInfo" class="side-head-card mirror">
         <div class="side-head-text">
-          <div class="owner-name">{{ activeDefenderInfo.ownerName }} ({{ activeDefenderInfo.heroName }})</div>
+          <div class="owner-name">
+            {{ activeDefenderInfo.ownerName }} (
+            <span :style="{ color: activeDefenderInfo.rarityColor || '#fff' }">{{ activeDefenderInfo.heroName }}</span>
+            )
+          </div>
           <button class="roster-link" @click="showDefRoster = !showDefRoster">Heros: {{ defenderRoster.length }}</button>
         </div>
         <img :src="activeDefenderInfo.imageUrl" class="side-head-avatar" alt="Defender" />
       </div>
       <div v-if="showDefRoster" class="roster-panel mirror">
-        <div v-for="(entry, idx) in defenderRoster" :key="`def-${idx}`" class="roster-line">{{ entry }}</div>
+        <div v-for="(entry, idx) in defenderRoster" :key="`def-${idx}`" class="roster-line">
+          {{ entry.owner }} (
+          <span :style="{ color: entry.rarityColor || '#fff' }">{{ entry.heroName }}</span>
+          )
+        </div>
       </div>
     </div>
 

@@ -1,38 +1,69 @@
 <script setup>
+import { onMounted, ref } from 'vue'
+
 const emit = defineEmits(['start-pve', 'back-home'])
 
-const startBattle = async () => {
+const presets = ref([])
+const loading = ref(false)
+const errorMessage = ref('')
+
+const fetchPresets = async () => {
+  loading.value = true
+  errorMessage.value = ''
   try {
-    const response = await fetch('http://localhost:3000/game/battle/start-pve', {
+    const response = await fetch('http://localhost:3000/game/battle/pve-presets', {
+      credentials: 'include'
+    })
+    const data = await response.json()
+    if (!data.success) {
+      errorMessage.value = data.message || 'Impossible de charger les ennemis.'
+      return
+    }
+    presets.value = data.presets || []
+  } catch (e) {
+    console.error(e)
+    errorMessage.value = 'Erreur serveur.'
+  } finally {
+    loading.value = false
+  }
+}
+
+const startBattle = async (presetId) => {
+  try {
+    const response = await fetch(`http://localhost:3000/game/battle/start-pve?presetId=${encodeURIComponent(presetId)}`, {
       method: 'POST',
       credentials: 'include'
     })
     const data = await response.json()
     if (data.success) {
-      // On émet l'événement avec l'ID de la bataille pour que le parent charge la BattleScene
       emit('start-pve', data.battle.id)
-    } else {
-      alert('Impossible de lancer le combat : ' + (data.message || 'Erreur inconnue'))
+      return
     }
+    alert('Impossible de lancer le combat : ' + (data.message || 'Erreur inconnue'))
   } catch (e) {
     console.error(e)
     alert('Erreur serveur')
   }
 }
+
+onMounted(fetchPresets)
 </script>
 
 <template>
   <div class="pve-selection">
     <h1>Choisir un Adversaire</h1>
 
-    <div class="enemy-card">
-      <img src="/Heroes/Goblin.png" alt="Goblin" class="enemy-img" />
-      <h3>Goblin Scout</h3>
-      <p>Niveau 1</p>
-      <button @click="startBattle" class="btn-attack">ATTAQUER</button>
+    <div v-if="loading" class="state">Chargement...</div>
+    <div v-else-if="errorMessage" class="state error">{{ errorMessage }}</div>
+    <div v-else class="enemy-grid">
+      <div v-for="preset in presets" :key="preset.id" class="enemy-card">
+        <img src="/Heroes/Goblin.png" alt="Enemy" class="enemy-main-img" />
+        <h3>{{ preset.name }}</h3>
+        <button @click="startBattle(preset.id)" class="btn-attack">ATTAQUER</button>
+      </div>
     </div>
 
-    <button @click="emit('back-home')" class="btn-back">Retour à la ville</button>
+    <button @click="emit('back-home')" class="btn-back">Retour a la ville</button>
   </div>
 </template>
 
@@ -48,25 +79,51 @@ const startBattle = async () => {
   justify-content: center;
   z-index: 40;
   position: absolute;
-  top: 0; left: 0;
+  top: 0;
+  left: 0;
+  padding: 24px;
+}
+
+.state {
+  margin: 18px 0;
+  color: #d8d8d8;
+}
+
+.state.error {
+  color: #ff9d9d;
+}
+
+.enemy-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: center;
+  width: min(900px, 94vw);
 }
 
 .enemy-card {
   background: #333;
-  padding: 20px;
+  padding: 16px;
   border-radius: 10px;
-  text-align: center;
   border: 2px solid #555;
-  margin-bottom: 30px;
-  width: 200px;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
-.enemy-img {
-  width: 80px;
-  height: 80px;
+.enemy-card h3 {
+  margin: 10px 0 12px;
+  min-height: 44px;
+}
+
+.enemy-main-img {
+  width: 92px;
+  height: 92px;
   border-radius: 50%;
   border: 2px solid #c0392b;
-  margin-bottom: 10px;
+  object-fit: cover;
 }
 
 .btn-attack {
@@ -76,7 +133,6 @@ const startBattle = async () => {
   padding: 10px 20px;
   font-weight: bold;
   cursor: pointer;
-  margin-top: 10px;
   width: 100%;
 }
 
@@ -85,6 +141,7 @@ const startBattle = async () => {
 }
 
 .btn-back {
+  margin-top: 16px;
   background: transparent;
   border: 1px solid #666;
   color: #ccc;

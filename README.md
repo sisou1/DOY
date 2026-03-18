@@ -126,3 +126,6 @@ vainqueur. Si plusieurs héros participent à la bataille, celui qui vient aprè
 qui renforce encore l’effet de bras de fer entre deux lignes d’unités qui s’enchaînent.
 
 
+La défense retire 20 % de sa valeur aux dégâts
+Le minimum de dégâts est toujours 1
+

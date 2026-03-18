@@ -88,14 +88,25 @@ export class GameController {
 
   // --- ROUTES BATAILLE ---
 
+  @Get('battle/pve-presets')
+  getPvEPresets() {
+    const presets = this.gameService.getPvEPresets();
+    return { success: true, presets };
+  }
+
   @Post('battle/start-pve')
-  async startPvE(@Req() req: Request) {
+  async startPvE(
+    @Req() req: Request,
+    @Body('presetId') presetIdBody?: string,
+    @Query('presetId') presetIdQuery?: string
+  ) {
     const sessionId = req.cookies?.sessionId;
     if (!sessionId) throw new UnauthorizedException('No session');
     const userId = this.authService.getUserIdFromSession(sessionId);
       if (!userId) throw new UnauthorizedException('Invalid session');
 
-      const battle = await this.gameService.startPvEBattle(userId);
+      const presetId = presetIdBody || presetIdQuery || 'goblin_patrol';
+      const battle = await this.gameService.startPvEBattle(userId, presetId);
     return { success: true, battle };
   }
 

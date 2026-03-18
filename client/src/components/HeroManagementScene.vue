@@ -140,7 +140,7 @@ watch(() => activeTab.value, (tab) => {
               <img :src="hero.imageUrl" class="hero-avatar" alt="Hero icon" />
               <div class="hero-info">
                 <div class="name-row">
-                  <span class="hero-name">{{ hero.name }}</span>
+                  <span class="hero-name" :style="{ color: hero.rarityColor || '#fff' }">{{ hero.name }}</span>
                   <span class="hero-lvl">Niv. {{ hero.level }}</span>
                 </div>
                 <button
@@ -188,41 +188,47 @@ watch(() => activeTab.value, (tab) => {
         <div v-if="recruitActionError" class="error-box">{{ recruitActionError }}</div>
         <div v-if="recruitmentError" class="error-box">{{ recruitmentError }}</div>
 
-        <div class="section-title">Heros possedes (suppression)</div>
-        <div class="owned-list">
-          <div v-for="hero in recruitment.ownedHeroes" :key="hero.id" class="owned-card">
-            <div class="owned-main">
-              <img :src="hero.imageUrl" class="owned-avatar" alt="Hero" />
-              <div>
-                <div class="owned-name">{{ hero.name }}</div>
-                <div class="owned-type">{{ hero.type }}</div>
+        <div class="recruitment-columns">
+          <div class="column-block">
+            <div class="section-title">Heros possedes (suppression)</div>
+            <div class="owned-list">
+              <div v-for="hero in recruitment.ownedHeroes" :key="hero.id" class="owned-card">
+                <div class="owned-main">
+                  <img :src="hero.imageUrl" class="owned-avatar" alt="Hero" />
+                  <div>
+                    <div class="owned-name" :style="{ color: hero.rarityColor || '#fff' }">{{ hero.name }}</div>
+                    <div class="owned-type">{{ hero.type }}</div>
+                  </div>
+                </div>
+                <button class="btn-remove" :disabled="!!hero.battleId" @click="askDismiss(hero)">
+                  Supprimer
+                </button>
               </div>
+              <div v-if="recruitment.ownedHeroes.length === 0" class="empty-inline">Aucun hero possede.</div>
             </div>
-            <button class="btn-remove" :disabled="!!hero.battleId" @click="askDismiss(hero)">
-              Supprimer
-            </button>
           </div>
-          <div v-if="recruitment.ownedHeroes.length === 0" class="empty-inline">Aucun hero possede.</div>
-        </div>
 
-        <div class="section-title">Heros recrutables</div>
-        <div v-if="loadingRecruitment" class="empty-inline">Chargement...</div>
-        <div v-else class="recruit-grid">
-          <div v-for="hero in recruitment.recruitableHeroes" :key="hero.type" class="recruit-card">
-            <div class="recruit-head">
-              <img :src="hero.imageUrl" class="owned-avatar" alt="Hero" />
-              <div>
-                <div class="owned-name">{{ hero.name }}</div>
-                <div class="owned-type">{{ hero.type }}</div>
+          <div class="column-block">
+            <div class="section-title">Heros recrutables</div>
+            <div v-if="loadingRecruitment" class="empty-inline">Chargement...</div>
+            <div v-else class="recruit-grid">
+              <div v-for="hero in recruitment.recruitableHeroes" :key="hero.type" class="recruit-card">
+                <div class="recruit-head">
+                  <img :src="hero.imageUrl" class="owned-avatar" alt="Hero" />
+                  <div>
+                    <div class="owned-name" :style="{ color: hero.rarityColor || '#fff' }">{{ hero.name }}</div>
+                    <div class="owned-type">{{ hero.type }}</div>
+                  </div>
+                </div>
+                <div class="recruit-stats">ATK {{ hero.attack }} | DEF {{ hero.defense }} | Troupes {{ hero.maxTroops }}</div>
+                <button class="btn-recruit" :disabled="!hasSlot" @click="recruitHero(hero.type)">
+                  Recruter
+                </button>
+              </div>
+              <div v-if="recruitment.recruitableHeroes.length === 0" class="empty-inline">
+                Aucun hero recrutable (deja possedes ou limite atteinte).
               </div>
             </div>
-            <div class="recruit-stats">ATK {{ hero.attack }} | DEF {{ hero.defense }} | Troupes {{ hero.maxTroops }}</div>
-            <button class="btn-recruit" :disabled="!hasSlot" @click="recruitHero(hero.type)">
-              Recruter
-            </button>
-          </div>
-          <div v-if="recruitment.recruitableHeroes.length === 0" class="empty-inline">
-            Aucun hero recrutable (deja possedes ou limite atteinte).
           </div>
         </div>
       </div>
@@ -391,9 +397,23 @@ watch(() => activeTab.value, (tab) => {
 
 .recruitment-content {
   display: grid;
-  grid-template-rows: auto auto auto auto 1fr;
+  grid-template-rows: auto auto 1fr;
   gap: 10px;
   min-height: 0;
+}
+
+.recruitment-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  min-height: 0;
+}
+
+.column-block {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 8px;
 }
 
 .recruitment-header { color: #ddd; font-size: 0.92rem; }
@@ -421,6 +441,12 @@ watch(() => activeTab.value, (tab) => {
   display: grid;
   gap: 8px;
   align-content: start;
+}
+
+@media (max-width: 860px) {
+  .recruitment-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
 .owned-card,
