@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import {
     BUILDING_TYPES,
@@ -362,68 +362,85 @@ export class GameService {
 
         const goblinStats = getHeroBaseStats(HERO_TYPES.GOBLIN);
 
-        // --- MODIFICATION : CRÉATION DE 2 GOBELINS ---
-        // Gobelin 1
-        const goblin1 = await this.prisma.hero.create({
-            data: {
-                name: 'Goblin Scout',
-                type: HERO_TYPES.GOBLIN,
-                attack: goblinStats.attack,
-                defense: goblinStats.defense,
-                troops: goblinStats.maxTroops,
-                maxTroops: goblinStats.maxTroops,
-                side: 'DEFENDER',
-                queueOrder: 0 // Actif immédiatement
-            }
-        });
-
-        // Gobelin 2
-        const goblin2 = await this.prisma.hero.create({
-            data: {
-                name: 'Goblin Warrior', // Un nom légèrement différent
-                type: HERO_TYPES.GOBLIN,
-                attack: goblinStats.attack + 2, // Un peu plus fort
-                defense: goblinStats.defense,
-                troops: goblinStats.maxTroops,
-                maxTroops: goblinStats.maxTroops,
-                side: 'DEFENDER',
-                queueOrder: 1 // Arrive après la mort du premier
-            }
-        });
-
-        // 3. Engager mon héros
-        await this.prisma.hero.update({
-            where: { id: myHero.id },
-            data: {
-                side: 'ATTACKER',
-                queueOrder: 0
-            }
-        });
-
-        // 4. Créer la bataille avec les 3 participants
-        return this.prisma.battle.create({
-            data: {
-                status: 'IN_PROGRESS',
-                lastUpdate: new Date(),
-                heroes: {
-                    connect: [
-                        { id: myHero.id },
-                        { id: goblin1.id },
-                        { id: goblin2.id }
-                    ]
+        return this.prisma.$transaction(async (tx) => {
+            // Gobelin 1
+            const goblin1 = await tx.hero.create({
+                data: {
+                    name: 'Goblin Scout',
+                    type: HERO_TYPES.GOBLIN,
+                    attack: goblinStats.attack,
+                    defense: goblinStats.defense,
+                    troops: goblinStats.maxTroops,
+                    maxTroops: goblinStats.maxTroops,
+                    side: 'DEFENDER',
+                    queueOrder: 0 // Actif immédiatement
                 }
-            },
-            include: { heroes: true }
+            });
+
+            // Gobelin 2
+            const goblin2 = await tx.hero.create({
+                data: {
+                    name: 'Goblin Warrior', // Un nom légèrement différent
+                    type: HERO_TYPES.GOBLIN,
+                    attack: goblinStats.attack + 2, // Un peu plus fort
+                    defense: goblinStats.defense,
+                    troops: goblinStats.maxTroops,
+                    maxTroops: goblinStats.maxTroops,
+                    side: 'DEFENDER',
+                    queueOrder: 1 // Arrive après la mort du premier
+                }
+            });
+
+            // Engager mon héros seulement s'il est encore disponible
+            const claim = await tx.hero.updateMany({
+                where: {
+                    id: myHero.id,
+                    battleId: null,
+                    troops: { gt: 0 }
+                },
+                data: {
+                    side: 'ATTACKER',
+                    queueOrder: 0
+                }
+            });
+            if (claim.count !== 1) {
+                throw new BadRequestException('Hero is no longer available');
+            }
+
+            // Créer la bataille avec les 3 participants
+            return tx.battle.create({
+                data: {
+                    status: 'IN_PROGRESS',
+                    lastUpdate: new Date(),
+                    heroes: {
+                        connect: [
+                            { id: myHero.id },
+                            { id: goblin1.id },
+                            { id: goblin2.id }
+                        ]
+                    }
+                },
+                include: { heroes: true }
+            });
         });
     }
 
-    async getBattle(battleId: number) {
+    async getBattle(userId: number, battleId: number) {
         let battle = await this.prisma.battle.findUnique({
             where: { id: battleId },
-            include: { heroes: { orderBy: { queueOrder: 'asc' } } }
+            include: {
+                heroes: {
+                    orderBy: { queueOrder: 'asc' },
+                    include: {
+                        profile: { select: { userId: true } }
+                    }
+                }
+            }
         });
 
         if (!battle) throw new BadRequestException('Battle not found');
+        const canAccess = (battle.heroes || []).some((h: any) => h.profile?.userId === userId);
+        if (!canAccess) throw new UnauthorizedException('Battle access denied');
 
         if (battle.status === 'IN_PROGRESS') {
             battle = await this.processBattleRounds(battle);
@@ -538,15 +555,31 @@ export class GameService {
             }
         }
 
-        // Avancer lastUpdate du nombre réel de rounds joués
-        await this.prisma.battle.update({
-            where: { id: battle.id },
+        const updateResult = await this.prisma.battle.updateMany({
+            where: {
+                id: battle.id,
+                lastUpdate: new Date(lastUpdate)
+            },
             data: {
                 status: finalStatus,
                 lastUpdate: new Date(finalUpdateMs),
                 logs: newLogs
             }
         });
+        if (updateResult.count === 0) {
+            const freshBattle = await this.prisma.battle.findUnique({
+                where: { id: battle.id },
+                include: {
+                    heroes: {
+                        orderBy: { queueOrder: 'asc' },
+                        include: {
+                            profile: { select: { userId: true } }
+                        }
+                    }
+                }
+            });
+            return freshBattle ?? battle;
+        }
 
         // Persister les troupes et relâcher si mort ou bataille finie
         await Promise.all(battle.heroes.map((hero: any) => {

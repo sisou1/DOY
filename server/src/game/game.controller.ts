@@ -100,11 +100,16 @@ export class GameController {
   }
 
   @Get('battle/:id')
-  async getBattle(@Param('id') id: string) {
+  async getBattle(@Req() req: Request, @Param('id') id: string) {
+    const sessionId = req.cookies?.sessionId;
+    if (!sessionId) throw new UnauthorizedException('No session');
+    const userId = this.authService.getUserIdFromSession(sessionId);
+    if (!userId) throw new UnauthorizedException('Invalid session');
+
     const battleId = parseInt(id);
     if (isNaN(battleId)) throw new BadRequestException('Invalid ID');
 
-    const battle = await this.gameService.getBattle(battleId);
+    const battle = await this.gameService.getBattle(userId, battleId);
     return { success: true, battle };
   }
 }
